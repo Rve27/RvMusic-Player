@@ -1,4 +1,4 @@
-package com.theveloper.pixelplay.presentation.components
+package com.rve.musicplayer.presentation.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -27,8 +27,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.theveloper.pixelplay.R
-import com.theveloper.pixelplay.ui.theme.GoogleSansRounded
+import com.rve.musicplayer.R
+import com.rve.musicplayer.ui.theme.GoogleSansRounded
 import racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape
 
 data class PlayStoreAnnouncementUiModel(

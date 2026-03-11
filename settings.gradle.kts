@@ -23,7 +23,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PixelPlay"
+rootProject.name = "RvMusic Player"
 include(":app")
 include(":shared")
 include(":wear")

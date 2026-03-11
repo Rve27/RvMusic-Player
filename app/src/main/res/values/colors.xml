@@ -24,4 +24,6 @@
 
     <color name="pixel_play_purple_dark">#19191B</color>
     <color name="light_background">#EDEDED</color>
+
+    <color name="ic_launcher_background">#F7B500</color>
 </resources>

@@ -35,7 +35,6 @@
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.PixelPlay"
         android:usesCleartextTraffic="true"
@@ -44,7 +43,6 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="@string/app_name"
             android:theme="@style/Theme.PixelPlay"
             android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize">
@@ -60,7 +58,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <intent-filter>
-                <action android:name="com.theveloper.pixelplay.action.OPEN_PLAYER" />
+                <action android:name="rve.pixelplay.action.OPEN_PLAYER" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <meta-data
@@ -102,7 +100,6 @@
         <activity
             android:name=".ExternalPlayerActivity"
             android:exported="true"
-            android:label="@string/app_name"
             android:launchMode="singleTop"
             android:theme="@style/Theme.PixelPlay.ExternalPlayer"
             android:excludeFromRecents="true"
@@ -128,7 +125,7 @@
 
         <service
             android:name=".data.service.MusicService"
-            android:exported="true"
+            android:exported="false"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
@@ -212,7 +209,7 @@
         </provider>
 
         <receiver android:name=".ui.glancewidget.WidgetUpdateReceiver" android:exported="true"> <intent-filter>
-            <action android:name="com.theveloper.pixelplay.ACTION_WIDGET_UPDATE_PLAYBACK_STATE" />
+            <action android:name="rve.pixelplay.ACTION_WIDGET_UPDATE_PLAYBACK_STATE" />
         </intent-filter>
         </receiver>
 
@@ -226,7 +223,7 @@
 
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
-            android:value="com.theveloper.pixelplay.data.service.cast.CastOptionsProvider" />
+            android:value="rve.pixelplay.data.service.cast.CastOptionsProvider" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"
@@ -243,34 +240,27 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
-                <data
-                    android:scheme="wear"
-                    android:host="*"
-                    android:pathPrefix="/playback_command" />
-                <data
-                    android:scheme="wear"
-                    android:host="*"
-                    android:pathPrefix="/volume_command" />
-                <data
-                    android:scheme="wear"
-                    android:host="*"
-                    android:pathPrefix="/browse_request" />
-                <data
-                    android:scheme="wear"
-                    android:host="*"
-                    android:pathPrefix="/transfer_request" />
-                <data
-                    android:scheme="wear"
-                    android:host="*"
-                    android:pathPrefix="/transfer_cancel" />
-                <data
-                    android:scheme="wear"
-                    android:host="*"
-                    android:pathPrefix="/transfer_progress" />
-                <data
-                    android:scheme="wear"
-                    android:host="*"
-                    android:pathPrefix="/watch_library_state" />
+                <data android:scheme="wear" />
+                <data android:host="*" />
+                <data android:pathPrefix="/playback_command" />
+                <data android:scheme="wear" />
+                <data android:host="*" />
+                <data android:pathPrefix="/volume_command" />
+                <data android:scheme="wear" />
+                <data android:host="*" />
+                <data android:pathPrefix="/browse_request" />
+                <data android:scheme="wear" />
+                <data android:host="*" />
+                <data android:pathPrefix="/transfer_request" />
+                <data android:scheme="wear" />
+                <data android:host="*" />
+                <data android:pathPrefix="/transfer_cancel" />
+                <data android:scheme="wear" />
+                <data android:host="*" />
+                <data android:pathPrefix="/transfer_progress" />
+                <data android:scheme="wear" />
+                <data android:host="*" />
+                <data android:pathPrefix="/watch_library_state" />
             </intent-filter>
         </service>
 

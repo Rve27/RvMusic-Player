@@ -1,12 +1,14 @@
-# PixelPlayer 🎵
+# RvMusic Player
+
+RvMusic Player is a fork of [PixelPlayer](https://github.com/theovilardo/PixelPlayer)
 
 <p align="center">
-  <img src="assets/icon.png" alt="App Icon" width="128"/>
+  <img src="assets/banner.png" alt="Banner"/>
 </p>
 
 <p align="center">
   <strong>A beautiful, feature-rich music player for Android</strong><br>
-  Built with Jetpack Compose and Material Design 3
+  Built with Jetpack Compose and Material Design 3 Expressive
 </p>
 
 <p align="center">
@@ -17,27 +19,27 @@
 </p>
 
 <p align="center">
-    <a href="https://github.com/theovilardo/PixelPlayer/releases/latest">
-        <img src="https://img.shields.io/github/v/release/theovilardo/PixelPlayer?include_prereleases&logo=github&style=for-the-badge&label=Latest%20Release" alt="Latest Release">
+    <a href="https://github.com/Rve27/RvMusic-Player/releases/latest">
+        <img src="https://img.shields.io/github/v/release/Rve27/RvMusic-Player?include_prereleases&logo=github&style=for-the-badge&label=Latest%20Release" alt="Latest Release">
     </a>
-    <a href="https://github.com/theovilardo/PixelPlayer/releases">
-        <img src="https://img.shields.io/github/downloads/theovilardo/PixelPlayer/total?logo=github&style=for-the-badge" alt="Total Downloads">
+    <a href="https://github.com/Rve27/RvMusic-Player/releases">
+        <img src="https://img.shields.io/github/downloads/Rve27/RvMusic-Player/total?logo=github&style=for-the-badge" alt="Total Downloads">
     </a>
-    <img src="https://img.shields.io/badge/Android-10%2B-green?style=for-the-badge&logo=android" alt="Android 11+">
+    <img src="https://img.shields.io/badge/Android-10%2B-green?style=for-the-badge&logo=android" alt="Android 13+">
     <img src="https://img.shields.io/badge/Kotlin-100%25-purple?style=for-the-badge&logo=kotlin" alt="Kotlin">
 </p>
 
 ---
 
 ## ‼️ DISCLAIMER
-- No fork of this project will recieve support, if you use a fork, ask the forker to support you.
+- No fork of this project will receive support, if you use a fork, ask the forker to support you.
 
 ---
 
 ## ✨ Features
 
 ### 🎨 Modern UI/UX
-- **Material You** - Dynamic color theming that adapts to your wallpaper
+- **Material 3 Expressive** - Dynamic color theming that adapts to your wallpaper
 - **Smooth Animations** - Fluid transitions and micro-interactions
 - **Customizable UI** - Adjustable corner radius and navigation bar settings
 - **Dark/Light Theme** - Automatic or manual theme switching
@@ -107,52 +109,34 @@
 
 ## 📱 Requirements
 
-- **Android 11** (API 30) or higher
+- **Android 13** (API 33) or higher
 - **4GB RAM** recommended for smooth performance
 
 ---
 
 ## 🚀 Getting Started
 
-### Prerequisites
+### How to build
 
-- Android Studio Ladybug | 2024.2.1 or newer
-- Android SDK 29+
-- JDK 11+
-
-### Installation
-
-1. **Clone the repository**
-   ```sh
-   git clone https://github.com/theovilardo/PixelPlayer.git
+   ```bash
+   git clone https://github.com/Rve27/RvMusic-Player.git
    ```
 
-2. **Open in Android Studio**
-   - Open Android Studio
-   - Select "Open an Existing Project"
-   - Navigate to the cloned directory
+   ```bash
+   cd RvMusic-Player
+   ```
 
-3. **Sync and Build**
-   - Wait for Gradle to sync dependencies
-   - Build the project (Build → Make Project)
-
-4. **Run**
-   - Connect a device or start an emulator
-   - Click Run (▶️)
-
+   ```bash
+   ./gradlew assembleDebug
+   ```
+   
 ---
 
 ## ⬇️ Download
 
 <p align="center">
-  <a href="https://github.com/theovilardo/PixelPlayer/releases/latest">
+  <a href="https://github.com/Rve27/RvMusic-Player/releases/latest">
     <img src="https://raw.githubusercontent.com/Kunzisoft/Github-badge/main/get-it-on-github.png" alt="Get it on GitHub" height="60">
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theveloper.pixelplay%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Ftheovilardo%2FPixelPlayer%22%2C%22author%22%3A%22theovilardo%22%2C%22name%22%3A%22PixelPlayer%22%2C%22supportFixedAPKURL%22%3Afalse%7D">
-    <img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="50">
   </a>
 </p>
 
@@ -161,7 +145,7 @@
 ## 📂 Project Structure
 
 ```
-app/src/main/java/com/theveloper/pixelplay/
+app/src/main/java/com/rve/musicplayer/
 ├── data/
 │   ├── database/       # Room entities, DAOs, migrations
 │   ├── model/          # Domain models (Song, Album, Artist, etc.)
@@ -203,5 +187,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 <p align="center">
-  Made with ❤️ by <a href="https://github.com/theovilardo">theovilardo</a>
+  Made with ❤️ by <a href="https://github.com/Rve27">Rve</a>
 </p>

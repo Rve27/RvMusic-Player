@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "com.theveloper.pixelplay"
+    namespace = "com.rve.musicplayer"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.theveloper.pixelplay"
+        applicationId = "com.rve.musicplayer"
         minSdk = 30
         targetSdk = 34
         versionCode = (project.findProperty("APP_VERSION_CODE") as String).toInt()

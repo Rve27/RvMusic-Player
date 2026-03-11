@@ -4,6 +4,6 @@
 -dontobfuscate
 
 # Keep serialization
--keepclassmembers class com.theveloper.pixelplay.shared.** {
+-keepclassmembers class com.rve.musicplayer.shared.** {
     *;
 }
