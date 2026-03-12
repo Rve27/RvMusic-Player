@@ -1610,13 +1610,22 @@ constructor(
     }
 
     private suspend fun syncNavidromeData() {
-        Log.i(TAG, "Syncing Navidrome songs to main database from local cache (Non-network mode)...")
+        Log.i(TAG, "Syncing Navidrome data from server...")
         try {
-            // This only syncs what is already in our Navidrome database to the Unified library.
-            // It does NOT connect to the server or refresh from remote.
-            navidromeRepository.syncUnifiedLibrarySongsFromNavidrome()
+            // Fetch playlists and songs from the Navidrome server, then sync to unified library
+            val result = navidromeRepository.syncAllPlaylistsAndSongs()
+            result.fold(
+                onSuccess = { summary ->
+                    Log.i(TAG, "Navidrome sync complete: ${summary.playlistCount} playlists, ${summary.syncedSongCount} songs synced (${summary.failedPlaylistCount} failed)")
+                },
+                onFailure = { e ->
+                    Log.w(TAG, "Navidrome server sync failed, falling back to local cache sync", e)
+                    // Fallback: at least sync what we already have cached
+                    navidromeRepository.syncUnifiedLibrarySongsFromNavidrome()
+                }
+            )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to sync Navidrome local data to unified library", e)
+            Log.e(TAG, "Failed to sync Navidrome data", e)
         }
     }
 }

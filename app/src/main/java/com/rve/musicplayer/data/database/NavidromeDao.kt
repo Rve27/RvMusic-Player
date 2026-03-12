@@ -67,6 +67,12 @@ interface NavidromeDao {
     @Query("SELECT COUNT(*) FROM navidrome_playlists")
     suspend fun getPlaylistCount(): Int
 
+    @Query("SELECT DISTINCT navidrome_id FROM navidrome_songs")
+    suspend fun getAllDistinctNavidromeIds(): List<String>
+
+    @Query("DELETE FROM navidrome_songs WHERE playlist_id = '__library__'")
+    suspend fun clearLibrarySongs()
+
     // ─── Clear All ─────────────────────────────────────────────────────
 
     @Query("DELETE FROM navidrome_songs")

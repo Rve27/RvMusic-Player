@@ -12,16 +12,8 @@ import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.audio.AudioSink
-import androidx.media3.exoplayer.audio.MediaCodecAudioRenderer
-import androidx.media3.exoplayer.audio.AudioRendererEventListener
 import androidx.media3.exoplayer.audio.DefaultAudioSink
-import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
-import androidx.media3.common.Format
-import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
-import android.os.Handler
-import kotlin.math.max
 //import androidx.media3.exoplayer.ffmpeg.FfmpegAudioRenderer
 import com.rve.musicplayer.data.model.TransitionSettings
 import com.rve.musicplayer.utils.envelope
@@ -270,49 +262,24 @@ class DualPlayerEngine @Inject constructor(
 
     private fun buildPlayer(handleAudioFocus: Boolean): ExoPlayer {
         val renderersFactory = object : DefaultRenderersFactory(context) {
-            override fun buildAudioRenderers(
+            override fun buildAudioSink(
                 context: Context,
-                extensionRendererMode: Int,
-                mediaCodecSelector: MediaCodecSelector,
-                enableDecoderFallback: Boolean,
-                audioSink: AudioSink,
-                eventHandler: Handler,
-                eventListener: AudioRendererEventListener,
-                out: ArrayList<Renderer>
-            ) {
-                // Use provided sink or create one with Float output enabled
-                // Note: We use the provided audioSink if it works, but here we want to enforce config.
-                // Since super.buildAudioRenderers takes the sink, we can just pass our configured one.
-                // But wait, the parameter 'audioSink' is passed IN. 
-                // We should probably ignore the passed one if we want to enforce ours, OR configure ours and pass it to super.
-                
-                val sink = DefaultAudioSink.Builder(context)
+                enableFloatOutput: Boolean,
+                enableAudioOutputPlaybackParams: Boolean
+            ): AudioSink {
+                // Keep Media3's default renderer wiring intact and only customize the sink.
+                return DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(false) // Disable Float output to fix CCodec/Hardware errors on some devices
+                    .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
                     .setAudioProcessorChain(
-                        // Custom downmix processor for 6 channel or 8 channel to 2 channel (stereo)
-                        DefaultAudioSink.DefaultAudioProcessorChain(SurroundDownmixProcessor())
+                        // Downsample >192 kHz before AudioTrack to avoid ultra-hi-res device hangs,
+                        // then downmix multichannel PCM when stereo output is required.
+                        DefaultAudioSink.DefaultAudioProcessorChain(
+                            HiResSampleRateCapAudioProcessor(),
+                            SurroundDownmixProcessor()
+                        )
                     )
                     .build()
-
-                out.add(object : MediaCodecAudioRenderer(
-                    context,
-                    mediaCodecSelector,
-                    enableDecoderFallback,
-                    eventHandler,
-                    eventListener,
-                    sink
-                ) {
-                    override fun getCodecMaxInputSize(
-                        codecInfo: MediaCodecInfo,
-                        format: Format,
-                        streamFormats: Array<Format>
-                    ): Int {
-                        // Force minimum 512KB buffer for FLAC/High-res audio
-                        return max(super.getCodecMaxInputSize(codecInfo, format, streamFormats), 512 * 1024)
-                    }
-                })
-
-                super.buildAudioRenderers(context, extensionRendererMode, mediaCodecSelector, enableDecoderFallback, sink, eventHandler, eventListener, out)
             }
         }.setEnableAudioFloatOutput(false) // Disable Float output helper
          .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)

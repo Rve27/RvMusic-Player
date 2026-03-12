@@ -63,6 +63,7 @@ class NavidromeRepository @Inject constructor(
         private const val NAVIDROME_PARENT_DIRECTORY = "/Cloud/Navidrome"
         private const val NAVIDROME_GENRE = "Navidrome"
         private const val NAVIDROME_PLAYLIST_PREFIX = "navidrome_playlist:"
+        private const val LIBRARY_PLAYLIST_ID = "__library__"
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -331,27 +332,114 @@ class NavidromeRepository @Inject constructor(
     }
 
     /**
-     * Sync all playlists and their songs.
+     * Sync all songs from the server library by fetching all albums.
+     */
+    suspend fun syncLibrarySongs(): Result<Int> {
+        if (!isLoggedIn) {
+            return Result.failure(Exception("Not logged in"))
+        }
+
+        return withContext(Dispatchers.IO) {
+            try {
+                Timber.d("$TAG: Syncing library songs from server")
+                val allSongs = mutableListOf<NavidromeSong>()
+                val pageSize = 500
+                val fetchedAlbums = fetchAllAlbums(pageSize)
+
+                // Fetch songs for each album
+                for (albumJson in fetchedAlbums) {
+                    val albumId = albumJson.optString("id", "")
+                    if (albumId.isBlank()) continue
+
+                    val songsResult = api.getAlbum(albumId)
+                    songsResult.fold(
+                        onSuccess = { songJsons ->
+                            val songs = NavidromeResponseParser.parseSongs(songJsons)
+                            allSongs.addAll(songs)
+                        },
+                        onFailure = {
+                            Timber.w(it, "$TAG: Failed to fetch songs for album $albumId")
+                        }
+                    )
+                }
+
+                if (allSongs.isEmpty()) {
+                    Timber.d("$TAG: No library songs found on server")
+                    return@withContext Result.success(0)
+                }
+
+                // Deduplicate by song ID
+                val uniqueSongs = allSongs.distinctBy { it.id }
+
+                val entities = uniqueSongs.map { song ->
+                    song.toEntity(LIBRARY_PLAYLIST_ID)
+                }
+
+                // Replace all library songs
+                dao.clearLibrarySongs()
+                dao.insertSongs(entities)
+
+                Timber.d("$TAG: Synced ${entities.size} library songs from ${fetchedAlbums.size} albums")
+                Result.success(entities.size)
+            } catch (e: Exception) {
+                Timber.e(e, "$TAG: Failed to sync library songs")
+                Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * Fetch all albums from server with pagination.
+     */
+    private suspend fun fetchAllAlbums(pageSize: Int): List<JSONObject> {
+        val allAlbums = mutableListOf<JSONObject>()
+        var offset = 0
+
+        while (true) {
+            val albumsResult = api.getAlbumList(
+                type = "alphabeticalByName",
+                size = pageSize,
+                offset = offset
+            )
+
+            val albumJsons = albumsResult.getOrNull()
+            if (albumJsons.isNullOrEmpty()) break
+
+            allAlbums.addAll(albumJsons)
+            offset += albumJsons.size
+            if (albumJsons.size < pageSize) break
+        }
+
+        return allAlbums
+    }
+
+    /**
+     * Sync all playlists and their songs, plus library songs.
      */
     suspend fun syncAllPlaylistsAndSongs(): Result<BulkSyncResult> {
         return withContext(Dispatchers.IO) {
-            val playlistResult = syncPlaylists().getOrElse {
-                return@withContext Result.failure(it)
-            }
+            var syncedSongCount = 0
+            var failedPlaylistCount = 0
 
-            if (playlistResult.isEmpty()) {
+            // Sync library songs (all albums)
+            val libResult = syncLibrarySongs()
+            libResult.fold(
+                onSuccess = { count -> syncedSongCount += count },
+                onFailure = { Timber.w(it, "$TAG: Failed syncing library songs") }
+            )
+
+            // Sync playlists
+            val playlistResult = syncPlaylists().getOrElse {
+                // Playlists failed but library songs may have synced
                 syncUnifiedLibrarySongsFromNavidrome()
                 return@withContext Result.success(
                     BulkSyncResult(
                         playlistCount = 0,
-                        syncedSongCount = 0,
+                        syncedSongCount = syncedSongCount,
                         failedPlaylistCount = 0
                     )
                 )
             }
-
-            var syncedSongCount = 0
-            var failedPlaylistCount = 0
 
             playlistResult.forEach { playlist ->
                 val songSyncResult = syncPlaylistSongs(playlist.id)
@@ -364,7 +452,7 @@ class NavidromeRepository @Inject constructor(
                 )
             }
 
-            // Sync to unified library once after all playlists are synced
+            // Sync to unified library once after everything is synced
             syncUnifiedLibrarySongsFromNavidrome()
 
             Result.success(
