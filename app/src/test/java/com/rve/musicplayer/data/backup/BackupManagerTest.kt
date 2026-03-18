@@ -65,9 +65,9 @@ class BackupManagerTest {
         )
         coEvery { restorePlanner.buildRestorePlan(backupUri) } returns Result.success(plan)
         every { validationPipeline.validateManifest(plan.manifest) } returns BackupValidationResult.Valid
-        coEvery { backupReader.readAllModulePayloads(backupUri) } returns Result.success(
-            mapOf(BackupSection.ENGAGEMENT_STATS.key to """[{"playCount": 1}]""")
-        )
+        coEvery {
+            backupReader.readModulePayload(backupUri, BackupSection.ENGAGEMENT_STATS.key)
+        } returns Result.success("""[{"playCount": 1}]""")
         every {
             validationPipeline.validateModulePayload(
                 BackupSection.ENGAGEMENT_STATS,
@@ -103,23 +103,47 @@ class BackupManagerTest {
         every { validationPipeline.validateFile(backupUri) } returns BackupValidationResult.Valid
         coEvery { restorePlanner.buildRestorePlan(backupUri) } returns Result.success(plan)
         every { validationPipeline.validateManifest(plan.manifest) } returns BackupValidationResult.Valid
-        coEvery { backupReader.readAllModulePayloads(backupUri) } returns Result.success(emptyMap())
+        coEvery {
+            backupReader.readModulePayload(backupUri, BackupSection.FAVORITES.key)
+        } returns Result.failure(IllegalArgumentException("Module 'favorites' not found in backup"))
 
         val result = manager.inspectBackup(backupUri)
 
         assertTrue(result.isFailure)
         assertEquals(
-            "Backup is missing the payload for Favorites.",
+            "Module 'favorites' not found in backup",
             result.exceptionOrNull()?.message
         )
     }
 
-    private fun restorePlan(selectedModules: Set<BackupSection>): RestorePlan {
+    @Test
+    fun `inspectBackup skips oversized module preview validation`() = runTest {
+        val oversizedModule = BackupReader.MAX_MODULE_PAYLOAD_BYTES + 1L
+        val plan = restorePlan(
+            selectedModules = setOf(BackupSection.PLAYBACK_HISTORY),
+            moduleSizeBytes = oversizedModule
+        )
+
+        every { validationPipeline.validateFile(backupUri) } returns BackupValidationResult.Valid
+        coEvery { restorePlanner.buildRestorePlan(backupUri) } returns Result.success(plan)
+        every { validationPipeline.validateManifest(plan.manifest) } returns BackupValidationResult.Valid
+
+        val result = manager.inspectBackup(backupUri).getOrThrow()
+
+        assertTrue(
+            result.warnings.any { it.contains("preview validation was skipped", ignoreCase = true) }
+        )
+    }
+
+    private fun restorePlan(
+        selectedModules: Set<BackupSection>,
+        moduleSizeBytes: Long = 32
+    ): RestorePlan {
         val modules = selectedModules.associate { section ->
             section.key to BackupModuleInfo(
                 checksum = "sha256:test",
                 entryCount = 1,
-                sizeBytes = 32
+                sizeBytes = moduleSizeBytes
             )
         }
         return RestorePlan(
@@ -137,7 +161,7 @@ class BackupManagerTest {
             moduleDetails = selectedModules.associateWith {
                 ModuleRestoreDetail(
                     entryCount = 1,
-                    sizeBytes = 32,
+                    sizeBytes = moduleSizeBytes,
                     willOverwrite = true
                 )
             }

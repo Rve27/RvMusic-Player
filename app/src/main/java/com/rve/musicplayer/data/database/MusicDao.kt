@@ -670,7 +670,15 @@ interface MusicDao {
 
     // --- Album Queries ---
     @Query("""
-        SELECT DISTINCT albums.* FROM albums
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.artist_name AS artist_name,
+            albums.artist_id AS artist_id,
+            albums.album_art_uri_string AS album_art_uri_string,
+            COUNT(songs.id) AS song_count,
+            albums.year AS year
+        FROM albums
         INNER JOIN songs ON albums.id = songs.album_id
         WHERE (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
         AND (
@@ -694,6 +702,13 @@ interface MusicDao {
                 )
             )
         )
+        GROUP BY
+            albums.id,
+            albums.title,
+            albums.artist_name,
+            albums.artist_id,
+            albums.album_art_uri_string,
+            albums.year
         ORDER BY albums.title ASC
     """)
     fun getAlbums(
@@ -702,10 +717,42 @@ interface MusicDao {
         filterMode: Int
     ): Flow<List<AlbumEntity>>
 
-    @Query("SELECT * FROM albums WHERE id = :albumId")
+    @Query("""
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.artist_name AS artist_name,
+            albums.artist_id AS artist_id,
+            albums.album_art_uri_string AS album_art_uri_string,
+            (
+                SELECT COUNT(*)
+                FROM songs
+                WHERE songs.album_id = albums.id
+            ) AS song_count,
+            albums.year AS year
+        FROM albums
+        WHERE albums.id = :albumId
+        LIMIT 1
+    """)
     fun getAlbumById(albumId: Long): Flow<AlbumEntity?>
 
-    @Query("SELECT * FROM albums WHERE title LIKE '%' || :query || '%' ORDER BY title ASC")
+    @Query("""
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.artist_name AS artist_name,
+            albums.artist_id AS artist_id,
+            albums.album_art_uri_string AS album_art_uri_string,
+            (
+                SELECT COUNT(*)
+                FROM songs
+                WHERE songs.album_id = albums.id
+            ) AS song_count,
+            albums.year AS year
+        FROM albums
+        WHERE albums.title LIKE '%' || :query || '%'
+        ORDER BY albums.title ASC
+    """)
     fun searchAlbums(query: String): Flow<List<AlbumEntity>>
 
     @Query("SELECT COUNT(*) FROM albums")
@@ -713,9 +760,24 @@ interface MusicDao {
 
     // Version of getAlbums that returns a List for one-shot reads
     @Query("""
-        SELECT DISTINCT albums.* FROM albums
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.artist_name AS artist_name,
+            albums.artist_id AS artist_id,
+            albums.album_art_uri_string AS album_art_uri_string,
+            COUNT(songs.id) AS song_count,
+            albums.year AS year
+        FROM albums
         INNER JOIN songs ON albums.id = songs.album_id
         WHERE (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
+        GROUP BY
+            albums.id,
+            albums.title,
+            albums.artist_name,
+            albums.artist_id,
+            albums.album_art_uri_string,
+            albums.year
         ORDER BY albums.title ASC
     """)
     suspend fun getAllAlbumsList(
@@ -723,14 +785,49 @@ interface MusicDao {
         applyDirectoryFilter: Boolean
     ): List<AlbumEntity>
 
-    @Query("SELECT * FROM albums WHERE artist_id = :artistId ORDER BY title ASC")
+    @Query("""
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.artist_name AS artist_name,
+            albums.artist_id AS artist_id,
+            albums.album_art_uri_string AS album_art_uri_string,
+            COUNT(songs.id) AS song_count,
+            albums.year AS year
+        FROM albums
+        LEFT JOIN songs ON albums.id = songs.album_id
+        WHERE albums.artist_id = :artistId
+        GROUP BY
+            albums.id,
+            albums.title,
+            albums.artist_name,
+            albums.artist_id,
+            albums.album_art_uri_string,
+            albums.year
+        ORDER BY albums.title ASC
+    """)
     fun getAlbumsByArtistId(artistId: Long): Flow<List<AlbumEntity>>
 
     @Query("""
-        SELECT DISTINCT albums.* FROM albums
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.artist_name AS artist_name,
+            albums.artist_id AS artist_id,
+            albums.album_art_uri_string AS album_art_uri_string,
+            COUNT(songs.id) AS song_count,
+            albums.year AS year
+        FROM albums
         INNER JOIN songs ON albums.id = songs.album_id
         WHERE (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
         AND (albums.title LIKE '%' || :query || '%' OR albums.artist_name LIKE '%' || :query || '%')
+        GROUP BY
+            albums.id,
+            albums.title,
+            albums.artist_name,
+            albums.artist_id,
+            albums.album_art_uri_string,
+            albums.year
         ORDER BY albums.title ASC
     """)
     fun searchAlbums(

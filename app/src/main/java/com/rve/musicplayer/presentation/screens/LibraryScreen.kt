@@ -88,8 +88,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -735,22 +733,14 @@ fun LibraryScreen(
     val currentTabTitle = currentTab.displayTitle()
 
     val headerContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
     Scaffold(
-        modifier = Modifier
-            .background(brush = gradientBrush)
-            .nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.background(brush = gradientBrush),
         topBar = {
-            val collapsedFraction = if (scrollBehavior.state.heightOffsetLimit != 0f) {
-                (scrollBehavior.state.heightOffset / scrollBehavior.state.heightOffsetLimit).coerceIn(0f, 1f)
-            } else 0f
-
             Column(
-                modifier = Modifier
-                    .background(headerContainerColor)
+                modifier = Modifier.background(headerContainerColor)
             ) {
-                TopAppBar(
+            TopAppBar(
                     title = {
                         if (isCompactNavigation) {
                             LibraryNavigationPill(
@@ -830,13 +820,11 @@ fun LibraryScreen(
                             )
                         }
                     },
-                    scrollBehavior = scrollBehavior,
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.Transparent,
                         scrolledContainerColor = Color.Transparent
                     )
                 )
-                AnimatedVisibility(visible = collapsedFraction < 0.5f) {
                 if (!isCompactNavigation) {
                     val showTabIndicator = false
                     PrimaryScrollableTabRow(
@@ -899,7 +887,6 @@ fun LibraryScreen(
                         pageCount = tabTitles.size,
                         modifier = Modifier.padding(top = 8.dp, bottom = 10.dp)
                     )
-                }
                 }
             }
         }

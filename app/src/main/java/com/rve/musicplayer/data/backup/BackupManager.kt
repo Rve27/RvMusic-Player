@@ -123,12 +123,17 @@ class BackupManager @Inject constructor(
                 warnings.addAll(manifestValidation.warnings.map { it.message })
             }
 
-            val modulePayloads = backupReader.readAllModulePayloads(uri).getOrThrow()
             plan.availableModules.toList().sortedBy { it.key }.forEach { section ->
-                val payload = modulePayloads[section.key]
-                    ?: throw IllegalArgumentException(
-                        "Backup is missing the payload for ${section.label}."
+                val moduleInfo = plan.manifest.modules[section.key]
+                if (moduleInfo != null && moduleInfo.sizeBytes > BackupReader.MAX_MODULE_PAYLOAD_BYTES) {
+                    warnings.add(
+                        "${section.label}: payload is ${moduleInfo.sizeBytes / (1024 * 1024)}MB, " +
+                            "so preview validation was skipped to avoid running out of memory."
                     )
+                    return@forEach
+                }
+
+                val payload = backupReader.readModulePayload(uri, section.key).getOrThrow()
 
                 val moduleValidation = validationPipeline.validateModulePayload(
                     section = section,

@@ -35,6 +35,12 @@ class EqualizerManager @Inject constructor() {
 
     val isAttached: Boolean
         get() = equalizer != null && currentAudioSessionId != 0
+
+    val hasAnyEnabledEffects: Boolean
+        get() = _isEnabled.value ||
+            _bassBoostEnabled.value ||
+            _virtualizerEnabled.value ||
+            _loudnessEnhancerEnabled.value
     
     // Normalized band levels (-15 to +15 for UI)
     private val _bandLevels = MutableStateFlow(List(NUM_BANDS) { 0 })
@@ -239,6 +245,18 @@ class EqualizerManager @Inject constructor() {
             release()
         }
     }
+
+    suspend fun attachToAudioSessionIfNeeded(audioSessionId: Int) {
+        if (!hasAnyEnabledEffects) {
+            Timber.tag(TAG).d(
+                "Skipping attachToAudioSession($audioSessionId): all audio effects are disabled"
+            )
+            releaseIfUnused()
+            return
+        }
+
+        attachToAudioSession(audioSessionId)
+    }
     
     /**
      * Enables or disables the equalizer.
@@ -251,6 +269,7 @@ class EqualizerManager @Inject constructor() {
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to set equalizer enabled state")
         }
+        releaseIfUnused()
     }
     
     /**
@@ -288,6 +307,7 @@ class EqualizerManager @Inject constructor() {
     fun setBassBoostEnabled(enabled: Boolean) {
         if (!isBassBoostSupportedGlobal) {
             _bassBoostEnabled.value = false
+            releaseIfUnused()
             return
         }
         _bassBoostEnabled.value = enabled
@@ -296,6 +316,7 @@ class EqualizerManager @Inject constructor() {
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to set bass boost enabled")
         }
+        releaseIfUnused()
     }
     
     /**
@@ -325,6 +346,7 @@ class EqualizerManager @Inject constructor() {
     fun setVirtualizerEnabled(enabled: Boolean) {
         if (!isVirtualizerSupportedGlobal) {
             _virtualizerEnabled.value = false
+            releaseIfUnused()
             return
         }
         _virtualizerEnabled.value = enabled
@@ -333,6 +355,7 @@ class EqualizerManager @Inject constructor() {
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to set virtualizer enabled")
         }
+        releaseIfUnused()
     }
     
     /**
@@ -366,6 +389,7 @@ class EqualizerManager @Inject constructor() {
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Failed to set loudness enhancer enabled")
         }
+        releaseIfUnused()
     }
 
     /**
@@ -417,9 +441,20 @@ class EqualizerManager @Inject constructor() {
         
         // Apply if already attached
         if (equalizer != null) {
+            if (!hasAnyEnabledEffects) {
+                releaseIfUnused()
+                return
+            }
             equalizer?.enabled = enabled
             applyBandLevels(preset.bandLevels)
             applyCurrentEffectStateToAttachedEffects()
+        }
+    }
+
+    private fun releaseIfUnused() {
+        if (!hasAnyEnabledEffects && isAttached) {
+            Timber.tag(TAG).d("Releasing audio effects because all effect toggles are disabled")
+            release()
         }
     }
 

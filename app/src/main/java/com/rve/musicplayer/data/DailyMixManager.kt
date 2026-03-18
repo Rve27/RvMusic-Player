@@ -345,8 +345,8 @@ class DailyMixManager @Inject constructor(
 
             RankedSong(
                 song = song,
-                finalScore = finalScore,
-                discoveryScore = discoveryScore,
+                finalScore = if (finalScore.isNaN() || finalScore.isInfinite()) 0.0 else finalScore,
+                discoveryScore = if (discoveryScore.isNaN() || discoveryScore.isInfinite()) 0.0 else discoveryScore,
                 affinityScore = affinityScore,
                 recencyScore = recencyScore,
                 noveltyScore = noveltyScore,

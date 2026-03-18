@@ -70,6 +70,7 @@ class DualPlayerEngine @Inject constructor(
     private lateinit var playerB: ExoPlayer
 
     private val onPlayerSwappedListeners = mutableListOf<(Player) -> Unit>()
+    private val onTransitionFinishedListeners = mutableListOf<() -> Unit>()
     
     // Active Audio Session ID Flow
     private val _activeAudioSessionId = kotlinx.coroutines.flow.MutableStateFlow(0)
@@ -179,6 +180,14 @@ class DualPlayerEngine @Inject constructor(
 
     fun removePlayerSwapListener(listener: (Player) -> Unit) {
         onPlayerSwappedListeners.remove(listener)
+    }
+
+    fun addTransitionFinishedListener(listener: () -> Unit) {
+        onTransitionFinishedListeners.add(listener)
+    }
+
+    fun removeTransitionFinishedListener(listener: () -> Unit) {
+        onTransitionFinishedListeners.remove(listener)
     }
 
     /** The master player instance that should be connected to the MediaSession. */
@@ -607,6 +616,7 @@ class DualPlayerEngine @Inject constructor(
                 playerB.stop()
             } finally {
                 transitionRunning = false
+                onTransitionFinishedListeners.forEach { it() }
             }
         }
     }

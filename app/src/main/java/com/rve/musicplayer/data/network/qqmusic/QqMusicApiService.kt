@@ -100,6 +100,52 @@ class QqMusicApiService @Inject constructor(
     }
 
     /**
+     * Get user's created playlists.
+     */
+    suspend fun getUserCreatedPlaylists(start: Int = 0, size: Int = 100): String = withContext(Dispatchers.IO) {
+        val uin = extractUin()
+        val gtk = getGTK()
+        Timber.d("getUserCreatedPlaylists: uin=$uin, gtk=$gtk, start=$start, size=$size")
+        val url = "https://c6.y.qq.com/rsc/fcgi-bin/fcg_user_created_diss?" +
+                "format=json&inCharset=utf-8&outCharset=utf-8&notice=0" +
+                "&platform=yqq.json&needNewCode=1" +
+                "&uin=$uin&g_tk=$gtk&g_tk_new_20200303=$gtk&hostuin=$uin&sin=$start&size=$size"
+
+        makeGetRequest(url)
+    }
+
+    /**
+     * Get user avatar URL based on encrypted uin from euin cookie.
+     */
+    fun getUserAvatarUrl(): String? {
+        val uin = extractUin()
+        if (uin == "0" || uin.isBlank()) return null
+
+        // Use QQ avatar URL instead of QQ Music avatar
+        // QQ Music avatar requires specific cookies and may not be set for all users
+        // QQ avatar is more reliable: https://q1.qlogo.cn/g?b=qq&nk={QQ_NUMBER}&s=140
+        val avatarUrl = "https://q1.qlogo.cn/g?b=qq&nk=$uin&s=140"
+
+        Timber.d("getUserAvatarUrl: uin=$uin, url=$avatarUrl")
+        return avatarUrl
+    }
+
+    /**
+     * Get user profile information including nickname.
+     */
+    suspend fun getUserProfile(): String = withContext(Dispatchers.IO) {
+        val uin = extractUin()
+        val gtk = getGTK()
+        Timber.d("getUserProfile: uin=$uin, gtk=$gtk")
+        val url = "https://c.y.qq.com/rsc/fcgi-bin/fcg_get_profile_homepage.fcg?" +
+                "format=json&inCharset=utf-8&outCharset=utf-8" +
+                "&cid=205360956&userid=$uin&reqfrom=1" +
+                "&g_tk=$gtk"
+
+        makeGetRequest(url)
+    }
+
+    /**
      * Get playlist detail including all songs.
      */
     suspend fun getPlaylistDetail(

@@ -32,8 +32,7 @@ class RestoreExecutor @Inject constructor(
         onProgress: (BackupTransferProgressUpdate) -> Unit
     ): RestoreResult = withContext(Dispatchers.IO) {
         val selectedModules = plan.selectedModules.toList().sortedBy { it.key }
-        // 3 overhead steps: snapshot, validate, finalize
-        val totalSteps = selectedModules.size * 3 + 3
+        val totalSteps = selectedModules.size * 2 + 3
         var step = 0
 
         // ---- PHASE 1: SNAPSHOT ----
@@ -52,20 +51,25 @@ class RestoreExecutor @Inject constructor(
             return@withContext RestoreResult.TotalFailure("Failed to capture current state: ${e.message}")
         }
 
-        // ---- PHASE 2: READ & VALIDATE ----
-        reportProgress(onProgress, ++step, totalSteps, "Reading backup data", "Extracting and validating modules.")
+        // ---- PHASE 2: READ, VALIDATE, RESTORE ----
+        reportProgress(onProgress, ++step, totalSteps, "Preparing restore", "Selected modules will be processed one at a time.")
 
-        val modulePayloads = mutableMapOf<BackupSection, String>()
+        val restoredModules = mutableListOf<BackupSection>()
+        var currentSection: BackupSection? = null
         try {
-            val allPayloads = backupReader.readAllModulePayloads(uri).getOrThrow()
-
             selectedModules.forEach { section ->
-                val payload = allPayloads[section.key]
-                if (payload == null) {
+                currentSection = section
+                val moduleInfo = plan.manifest.modules[section.key]
+                if (moduleInfo != null &&
+                    moduleInfo.sizeBytes > BackupReader.MAX_MODULE_PAYLOAD_BYTES
+                ) {
                     throw IllegalStateException(
-                        "Backup is missing the payload for ${section.label}."
+                        "Backup payload for ${section.label} is ${moduleInfo.sizeBytes / (1024 * 1024)}MB, " +
+                            "which exceeds the ${BackupReader.MAX_MODULE_PAYLOAD_BYTES / (1024 * 1024)}MB restore safety limit."
                     )
                 }
+
+                val payload = backupReader.readModulePayload(uri, section.key).getOrThrow()
 
                 // Validate each module payload
                 val validationResult = validationPipeline.validateModulePayload(
@@ -77,25 +81,13 @@ class RestoreExecutor @Inject constructor(
                     )
                 }
 
-                modulePayloads[section] = payload
                 reportProgress(
                     onProgress, ++step, totalSteps,
                     "Validated ${section.label}",
                     section.description,
                     section
                 )
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Validation phase failed", e)
-            return@withContext RestoreResult.TotalFailure("Validation failed: ${e.message}")
-        }
 
-        // ---- PHASE 3: RESTORE ----
-        val restoredModules = mutableListOf<BackupSection>()
-        var currentSection: BackupSection? = null
-        try {
-            modulePayloads.forEach { (section, payload) ->
-                currentSection = section
                 reportProgress(
                     onProgress, ++step, totalSteps,
                     "Restoring ${section.label}",
@@ -109,7 +101,7 @@ class RestoreExecutor @Inject constructor(
                 restoredModules.add(section)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Restore failed at module, rolling back", e)
+            Log.e(TAG, "Restore failed while processing backup module, rolling back", e)
             // Roll back in reverse restore order, including the module that failed mid-restore.
             var rollbackSuccess = true
             val rollbackOrder = (restoredModules + listOfNotNull(currentSection)).distinct().asReversed()
@@ -142,7 +134,7 @@ class RestoreExecutor @Inject constructor(
             )
         }
 
-        // ---- PHASE 4: FINALIZE ----
+        // ---- PHASE 3: FINALIZE ----
         reportProgress(onProgress, ++step, totalSteps, "Restore complete", "All selected modules were restored successfully.")
 
         RestoreResult.Success

@@ -127,6 +127,7 @@ class MusicService : MediaLibraryService() {
     private var replayGainRequestToken = 0L
     private var userSelectedVolume = 1f
     private var expectedReplayGainVolume: Float? = null
+    private var pendingReplayGainVolume: Float? = null
 
     private var favoriteSongIds = emptySet<String>()
     private var mediaSession: MediaLibraryService.MediaLibrarySession? = null
@@ -212,6 +213,10 @@ class MusicService : MediaLibraryService() {
         }
     }
 
+    private val transitionFinishedListener: () -> Unit = {
+        onTransitionFinished()
+    }
+
     override fun onCreate() {
         // Media3's Cast SDK callback path (MediaSessionImpl$$ExternalSyntheticLambda →
         // Util.postOrRun → MediaNotificationManager.updateNotificationInternal) calls
@@ -241,13 +246,14 @@ class MusicService : MediaLibraryService() {
 
         // Handle player swaps (crossfade) to keep MediaSession in sync
         engine.addPlayerSwapListener(playerSwapListener)
+        engine.addTransitionFinishedListener(transitionFinishedListener)
 
         controller.initialize()
         initializeCastWearSync()
         registerHeadsetReconnectMonitor()
 
-        // Restore equalizer state from preferences and attach to audio session.
-        // This ensures the equalizer is active even before the user opens the EQ screen.
+        // Restore equalizer state from preferences and only attach audio effects when
+        // the user actually has at least one effect enabled for the current session.
         serviceScope.launch {
             val eqEnabled = equalizerPreferencesRepository.equalizerEnabledFlow.first()
             val presetName = equalizerPreferencesRepository.equalizerPresetFlow.first()
@@ -268,13 +274,13 @@ class MusicService : MediaLibraryService() {
 
             val sessionId = engine.getAudioSessionId()
             if (sessionId != 0) {
-                equalizerManager.attachToAudioSession(sessionId)
+                equalizerManager.attachToAudioSessionIfNeeded(sessionId)
             }
 
             // Re-attach equalizer whenever the active audio session changes (e.g. crossfade)
             engine.activeAudioSessionId.collect { newSessionId ->
                 if (newSessionId != 0) {
-                    equalizerManager.attachToAudioSession(newSessionId)
+                    equalizerManager.attachToAudioSessionIfNeeded(newSessionId)
                 }
             }
         }
@@ -803,7 +809,8 @@ class MusicService : MediaLibraryService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val forcedForegroundStart =
             intent?.getBooleanExtra(EXTRA_FORCE_FOREGROUND_ON_START, false) == true
-        if (forcedForegroundStart) {
+        val isMediaButtonIntent = intent?.action == Intent.ACTION_MEDIA_BUTTON
+        if (forcedForegroundStart || isMediaButtonIntent) {
             startTemporaryForegroundForCommand()
         }
 
@@ -868,7 +875,7 @@ class MusicService : MediaLibraryService() {
             }
         }
         val startCommandResult = super.onStartCommand(intent, flags, startId)
-        if (forcedForegroundStart) {
+        if (forcedForegroundStart || isMediaButtonIntent) {
             val player = mediaSession?.player
             val isActivelyPlaying = player?.let {
                 it.playWhenReady &&
@@ -1010,6 +1017,7 @@ class MusicService : MediaLibraryService() {
         }
 
         if (!replayGainEnabled) {
+            pendingReplayGainVolume = null
             if (!engine.isTransitionRunning()) {
                 setPlayerVolume(player, userSelectedVolume)
             }
@@ -1050,8 +1058,13 @@ class MusicService : MediaLibraryService() {
                 useAlbumGain = useAlbumGain
             )
 
-            // Only apply if we're not mid-crossfade
-            if (!engine.isTransitionRunning()) {
+            if (engine.isTransitionRunning()) {
+                // Store for application after transition completes
+                pendingReplayGainVolume = volume
+                Timber.tag(TAG).d("ReplayGain: Stored pending volume=%.2f for %s (transition running)",
+                    volume, mediaItem.mediaMetadata?.title)
+            } else {
+                pendingReplayGainVolume = null
                 setPlayerVolume(player, volume)
                 Timber.tag(TAG).d("ReplayGain: Applied volume=%.2f for %s",
                     volume, mediaItem.mediaMetadata?.title)
@@ -1063,6 +1076,27 @@ class MusicService : MediaLibraryService() {
         val clampedVolume = volume.coerceIn(0f, 1f)
         expectedReplayGainVolume = clampedVolume
         player.volume = clampedVolume
+    }
+
+    private fun onTransitionFinished() {
+        val player = engine.masterPlayer
+        val pending = pendingReplayGainVolume
+        pendingReplayGainVolume = null
+
+        if (!replayGainEnabled) {
+            setPlayerVolume(player, userSelectedVolume)
+            Timber.tag(TAG).d("ReplayGain: Transition finished, RG disabled — restored userSelectedVolume=%.2f", userSelectedVolume)
+            return
+        }
+
+        if (pending != null) {
+            setPlayerVolume(player, pending)
+            Timber.tag(TAG).d("ReplayGain: Transition finished, applied pending volume=%.2f", pending)
+        } else {
+            // No pending volume was computed during transition, trigger full computation
+            applyReplayGain(mediaSession?.player?.currentMediaItem)
+            Timber.tag(TAG).d("ReplayGain: Transition finished, no pending volume — triggering full recomputation")
+        }
     }
 
     private fun initializeCastWearSync() {
@@ -1201,6 +1235,7 @@ class MusicService : MediaLibraryService() {
         replayGainJob?.cancel()
 
         engine.removePlayerSwapListener(playerSwapListener)
+        engine.removeTransitionFinishedListener(transitionFinishedListener)
         engine.masterPlayer.removeListener(playerListener)
 
         mediaSession?.run {
@@ -1969,15 +2004,20 @@ class MusicService : MediaLibraryService() {
         // Android 12+ (API 31+): Media3 calls startForegroundService asynchronously
         // (e.g. after bitmap loading or Cast SDK callbacks). By that time the app may
         // already be in the background, causing ForegroundServiceStartNotAllowedException.
-        // Catch the exception and fall back to startService — if the service is already
-        // foreground, the subsequent Service.startForeground() call will just update
-        // the notification without throwing.
+        // Do not fall back to startService(): on Android 12+ that turns the original
+        // foreground-service exception into BackgroundServiceStartNotAllowedException,
+        // which Media3 does not handle and crashes the process. If the service is
+        // already foreground, Media3's subsequent startForeground() call will simply
+        // update the notification.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             return try {
                 super.startForegroundService(serviceIntent)
             } catch (e: ForegroundServiceStartNotAllowedException) {
-                Timber.tag(TAG).w(e, "startForegroundService not allowed, falling back to startService")
-                startService(serviceIntent)
+                Timber.tag(TAG).w(
+                    e,
+                    "startForegroundService not allowed; ignoring redundant self-start request"
+                )
+                serviceIntent?.component ?: ComponentName(this, javaClass)
             }
         }
         return super.startForegroundService(serviceIntent)
@@ -2199,16 +2239,6 @@ class MusicService : MediaLibraryService() {
 
     private fun buildMediaButtonPreferences(session: MediaSession): List<CommandButton> {
         val player = session.player
-        val previousButton = CommandButton.Builder(CommandButton.ICON_PREVIOUS)
-            .setDisplayName("Previous")
-            .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
-            .build()
-
-        val nextButton = CommandButton.Builder(CommandButton.ICON_NEXT)
-            .setDisplayName("Next")
-            .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
-            .build()
-
         val songId = player.currentMediaItem?.mediaId
         val isFavorite = isSongFavorite(songId)
         val likeButton = CommandButton.Builder(
@@ -2216,6 +2246,7 @@ class MusicService : MediaLibraryService() {
         )
             .setDisplayName("Like")
             .setSessionCommand(SessionCommand(MusicNotificationProvider.CUSTOM_COMMAND_LIKE, Bundle.EMPTY))
+            .setSlots(CommandButton.SLOT_OVERFLOW)
             .build()
 
         val shuffleOn = isManualShuffleEnabled
@@ -2229,6 +2260,7 @@ class MusicService : MediaLibraryService() {
         )
             .setDisplayName("Shuffle")
             .setSessionCommand(SessionCommand(shuffleCommandAction, Bundle.EMPTY))
+            .setSlots(CommandButton.SLOT_OVERFLOW)
             .build()
 
         val repeatButton = CommandButton.Builder(
@@ -2240,9 +2272,15 @@ class MusicService : MediaLibraryService() {
         )
             .setDisplayName("Repeat")
             .setSessionCommand(SessionCommand(MusicNotificationProvider.CUSTOM_COMMAND_CYCLE_REPEAT_MODE, Bundle.EMPTY))
+            .setSlots(CommandButton.SLOT_OVERFLOW)
             .build()
 
-        return listOf(previousButton, nextButton, likeButton, shuffleButton, repeatButton)
+        // Let Media3 provide the primary previous/play-next transport buttons from player
+        // commands instead of advertising custom back/forward slots here. When custom
+        // SLOT_BACK/SLOT_FORWARD buttons are present, Media3 strips the legacy
+        // ACTION_SKIP_TO_PREVIOUS/NEXT flags from PlaybackStateCompat, which causes some
+        // OEM compact system players (including ColorOS Control Center) to gray out skip.
+        return listOf(likeButton, shuffleButton, repeatButton)
     }
 
     // ------------------------

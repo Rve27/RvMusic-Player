@@ -221,7 +221,27 @@ object AppModule {
     fun provideImageLoader(
         @ApplicationContext context: Context
     ): ImageLoader {
+        // Add interceptor for QQ Music images
+        val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                val url = request.url.toString()
+
+                // Add Referer header for QQ Music images
+                val newRequest = if (url.contains("y.qq.com")) {
+                    request.newBuilder()
+                        .header("Referer", "https://y.qq.com/")
+                        .build()
+                } else {
+                    request
+                }
+
+                chain.proceed(newRequest)
+            }
+            .build()
+
         return ImageLoader.Builder(context)
+            .okHttpClient(okHttpClient)
             .dispatcher(Dispatchers.Default) // Use CPU-bound dispatcher for decoding
             .allowHardware(true) // Re-enable hardware bitmaps for better performance
             .memoryCache {

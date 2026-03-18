@@ -37,13 +37,28 @@ class QqMusicDashboardViewModel @Inject constructor(
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
+    private val _showSyncTypeDialog = MutableStateFlow(false)
+    val showSyncTypeDialog: StateFlow<Boolean> = _showSyncTypeDialog.asStateFlow()
+
     val nickname: String?
         get() = repository.userNickname
 
-    fun syncAll() {
+    val avatarUrl: String?
+        get() = repository.userAvatarUrl
+
+    fun showSyncTypeDialog() {
+        _showSyncTypeDialog.value = true
+    }
+
+    fun hideSyncTypeDialog() {
+        _showSyncTypeDialog.value = false
+    }
+
+    fun syncAll(syncType: QqMusicRepository.PlaylistSyncType = QqMusicRepository.PlaylistSyncType.ALL) {
         viewModelScope.launch {
             _syncState.value = SyncState.Syncing
-            repository.syncAllPlaylistsAndSongs().fold(
+            _showSyncTypeDialog.value = false
+            repository.syncAllPlaylistsAndSongs(syncType).fold(
                 onSuccess = { result ->
                     val msg = "Synced ${result.playlistCount} playlists, ${result.syncedSongCount} songs"
                     Timber.d("QQ Music sync success: $msg")

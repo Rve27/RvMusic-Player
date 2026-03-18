@@ -590,7 +590,6 @@ class SongMetadataEditor(
                 put(MediaStore.Audio.Media.ALBUM, album)
                 put(MediaStore.Audio.Media.GENRE, genre)
                 put(MediaStore.Audio.Media.TRACK, trackNumber)
-                put(MediaStore.Audio.Media.DISPLAY_NAME, title)
                 put(MediaStore.Audio.Media.DATE_MODIFIED, System.currentTimeMillis() / 1000)
                 put(MediaStore.Audio.Media.ALBUM_ARTIST, artist)
             }

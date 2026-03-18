@@ -50,12 +50,10 @@ class RestoreExecutorTest {
 
         coEvery { favoritesHandler.snapshot() } returns "favorites-snapshot"
         coEvery { playbackHistoryHandler.snapshot() } returns "history-snapshot"
-        coEvery { backupReader.readAllModulePayloads(backupUri) } returns Result.success(
-            mapOf(
-                BackupSection.FAVORITES.key to "favorites-payload",
-                BackupSection.PLAYBACK_HISTORY.key to "history-payload"
-            )
-        )
+        coEvery { backupReader.readModulePayload(backupUri, BackupSection.FAVORITES.key) } returns
+            Result.success("favorites-payload")
+        coEvery { backupReader.readModulePayload(backupUri, BackupSection.PLAYBACK_HISTORY.key) } returns
+            Result.success("history-payload")
         every {
             validationPipeline.validateModulePayload(any(), any(), any())
         } returns BackupValidationResult.Valid
@@ -77,24 +75,45 @@ class RestoreExecutorTest {
         val plan = restorePlan(selectedModules = setOf(BackupSection.FAVORITES))
 
         coEvery { favoritesHandler.snapshot() } returns "favorites-snapshot"
-        coEvery { backupReader.readAllModulePayloads(backupUri) } returns Result.success(emptyMap())
+        coEvery { backupReader.readModulePayload(backupUri, BackupSection.FAVORITES.key) } returns
+            Result.failure(IllegalArgumentException("Module 'favorites' not found in backup"))
 
         val result = executor.execute(backupUri, plan) { }
 
         val failure = assertInstanceOf(RestoreResult.TotalFailure::class.java, result)
         assertEquals(
-            "Validation failed: Backup is missing the payload for Favorites.",
+            "Restore failed at Favorites: Module 'favorites' not found in backup. All applied changes were rolled back.",
             failure.error
         )
         coVerify(exactly = 0) { favoritesHandler.restore(any()) }
     }
 
-    private fun restorePlan(selectedModules: Set<BackupSection>): RestorePlan {
+    @Test
+    fun `execute fails before loading oversized module payload`() = runTest {
+        val plan = restorePlan(
+            selectedModules = setOf(BackupSection.PLAYBACK_HISTORY),
+            moduleSizeBytes = BackupReader.MAX_MODULE_PAYLOAD_BYTES + 1L
+        )
+
+        coEvery { playbackHistoryHandler.snapshot() } returns "history-snapshot"
+
+        val result = executor.execute(backupUri, plan) { }
+
+        val failure = assertInstanceOf(RestoreResult.TotalFailure::class.java, result)
+        assertTrue(failure.error.contains("restore safety limit"))
+        coVerify(exactly = 0) { backupReader.readModulePayload(any(), any()) }
+        coVerify(exactly = 0) { playbackHistoryHandler.restore(any()) }
+    }
+
+    private fun restorePlan(
+        selectedModules: Set<BackupSection>,
+        moduleSizeBytes: Long = 32
+    ): RestorePlan {
         val modules = selectedModules.associate { section ->
             section.key to BackupModuleInfo(
                 checksum = "sha256:test",
                 entryCount = 1,
-                sizeBytes = 32
+                sizeBytes = moduleSizeBytes
             )
         }
         return RestorePlan(
@@ -112,7 +131,7 @@ class RestoreExecutorTest {
             moduleDetails = selectedModules.associateWith {
                 ModuleRestoreDetail(
                     entryCount = 1,
-                    sizeBytes = 32,
+                    sizeBytes = moduleSizeBytes,
                     willOverwrite = true
                 )
             }

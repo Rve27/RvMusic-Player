@@ -84,6 +84,9 @@ class QqMusicRepository @Inject constructor(
     val userNickname: String?
         get() = prefs.getString("qqmusic_nickname", null)
 
+    val userAvatarUrl: String?
+        get() = prefs.getString("qqmusic_avatar_url", null)
+
     fun getPlaylists(): Flow<List<QqMusicPlaylistEntity>> = dao.getAllPlaylists()
 
     fun initFromSavedCookies() {
@@ -111,8 +114,37 @@ class QqMusicRepository @Inject constructor(
                     throw IllegalStateException("QQ Music login cookie not detected")
                 }
 
-                val nickname = "QQ Music User"
-                prefs.edit().putString("qqmusic_nickname", nickname).apply()
+                // Fetch user profile to get real nickname
+                var nickname = "QQ Music User"
+                try {
+                    // Try to get nickname from created playlists API
+                    val createdPlaylistsRaw = api.getUserCreatedPlaylists(start = 0, size = 1)
+                    Timber.d("QQ Music getUserCreatedPlaylists response: ${createdPlaylistsRaw.take(500)}")
+
+                    if (createdPlaylistsRaw.isNotBlank()) {
+                        val json = JSONObject(createdPlaylistsRaw)
+                        val code = json.optInt("code", -1)
+                        if (code == 0) {
+                            val data = json.optJSONObject("data")
+                            // The nickname is in "hostname" field
+                            val hostname = data?.optString("hostname")
+                            if (!hostname.isNullOrBlank()) {
+                                nickname = hostname
+                                Timber.d("QQ Music login: got nickname=$nickname")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Timber.w(e, "Failed to fetch QQ Music user info, using default nickname")
+                }
+
+                val avatarUrl = api.getUserAvatarUrl()
+
+                prefs.edit()
+                    .putString("qqmusic_nickname", nickname)
+                    .putString("qqmusic_avatar_url", avatarUrl)
+                    .apply()
+
                 _isLoggedInFlow.value = true
                 nickname
             }
@@ -225,7 +257,13 @@ class QqMusicRepository @Inject constructor(
 
     // ─── Content Sync ──────────────────────────────────────────────────
 
-    suspend fun syncUserPlaylists(): Result<List<QqMusicPlaylistEntity>> {
+    enum class PlaylistSyncType {
+        CREATED,    // 我创建的歌单
+        COLLECTED,  // 我收藏的歌单
+        ALL         // 全部
+    }
+
+    suspend fun syncUserPlaylists(syncType: PlaylistSyncType = PlaylistSyncType.ALL): Result<List<QqMusicPlaylistEntity>> {
         Timber.d("syncUserPlaylists called, isLoggedIn=$isLoggedIn")
         if (!isLoggedIn) {
             Timber.w("syncUserPlaylists: Not logged in, aborting")
@@ -237,67 +275,130 @@ class QqMusicRepository @Inject constructor(
                 var start = 0
                 var page = 0
 
-                while (true) {
-                    val raw = api.getUserPlaylists(start = start, count = QQ_USER_PLAYLIST_PAGE_SIZE)
-                    Timber.d("syncUserPlaylists: page=$page start=$start response length=${raw.length}")
-                    val root = JSONObject(raw)
-                    val code = root.optInt("code", -1)
-                    if (code != 0) {
-                        throw Exception("QQ Music API Error: code=$code. Check your login.")
-                    }
+                // First, fetch user created playlists
+                if (syncType == PlaylistSyncType.CREATED || syncType == PlaylistSyncType.ALL) {
+                    Timber.d("syncUserPlaylists: fetching user created playlists")
+                    var createdStart = 0
+                    var createdPage = 0
+                    while (true) {
+                        val raw = api.getUserCreatedPlaylists(start = createdStart, size = QQ_USER_PLAYLIST_PAGE_SIZE)
+                        Timber.d("syncUserPlaylists: created page=$createdPage start=$createdStart response length=${raw.length}")
+                        val root = JSONObject(raw)
+                        val code = root.optInt("code", -1)
+                        if (code != 0) {
+                            Timber.w("getUserCreatedPlaylists API error: code=$code")
+                            break
+                        }
 
-                    val data = root.optJSONObject("data") ?: break
-                    val cdlist = data.optJSONArray("cdlist") ?: break
-                    val fetchedCount = cdlist.length()
-                    if (fetchedCount == 0) break
+                        val data = root.optJSONObject("data") ?: break
+                        val disslist = data.optJSONArray("disslist") ?: break
+                        val fetchedCount = disslist.length()
+                        if (fetchedCount == 0) break
 
-                    var newInPage = 0
-                    for (i in 0 until fetchedCount) {
-                        val pl = cdlist.optJSONObject(i) ?: continue
-                        val songCount = pl.optInt("songnum", 0)
-                        // Skip empty playlists (deleted or not yet populated)
-                        if (songCount == 0) continue
-                        val id = pl.optLong("dissid", 0L)
-                        if (id <= 0L) continue
-                        val name = decodeBase64IfNeeded(pl.optString("dissname", ""))
-                        // Skip playlists with blank names
-                        if (name.isBlank()) continue
-                        val previous = entitiesById.put(
-                            id,
-                            QqMusicPlaylistEntity(
-                                id = id,
-                                name = name,
-                                coverUrl = pl.optString("logo", ""),
-                                songCount = songCount,
-                                lastSyncTime = System.currentTimeMillis()
+                        var newInPage = 0
+                        for (i in 0 until fetchedCount) {
+                            val pl = disslist.optJSONObject(i) ?: continue
+                            val songCount = pl.optInt("song_cnt", 0)
+                            if (songCount == 0) continue
+                            val id = pl.optLong("tid", 0L)
+                            if (id <= 0L) continue
+                            val name = pl.optString("diss_name", "")
+                            if (name.isBlank()) continue
+                            val previous = entitiesById.put(
+                                id,
+                                QqMusicPlaylistEntity(
+                                    id = id,
+                                    name = name,
+                                    coverUrl = pl.optString("diss_cover", ""),
+                                    songCount = songCount,
+                                    lastSyncTime = System.currentTimeMillis()
+                                )
                             )
+                            if (previous == null) newInPage += 1
+                        }
+
+                        createdStart += fetchedCount
+                        val total = data.optInt("total_cnt", -1)
+                        val reachedTotal = total > 0 && createdStart >= total
+                        val hasLikelyMore = fetchedCount >= QQ_USER_PLAYLIST_PAGE_SIZE
+
+                        if (reachedTotal || !hasLikelyMore) break
+                        if (newInPage == 0 && createdPage > 0) {
+                            Timber.w("syncUserPlaylists: created playlists pagination returned no new items at page=$createdPage, stopping")
+                            break
+                        }
+
+                        createdPage += 1
+                        if (createdPage >= QQ_MAX_PLAYLIST_PAGES) {
+                            Timber.w("syncUserPlaylists: reached max page guard for created playlists, stopping")
+                            break
+                        }
+                    }
+                }
+
+                // Then, fetch collected playlists
+                if (syncType == PlaylistSyncType.COLLECTED || syncType == PlaylistSyncType.ALL) {
+                    Timber.d("syncUserPlaylists: fetching collected playlists")
+                    while (true) {
+                        val raw = api.getUserPlaylists(start = start, count = QQ_USER_PLAYLIST_PAGE_SIZE)
+                        Timber.d("syncUserPlaylists: page=$page start=$start response length=${raw.length}")
+                        val root = JSONObject(raw)
+                        val code = root.optInt("code", -1)
+                        if (code != 0) {
+                            throw Exception("QQ Music API Error: code=$code. Check your login.")
+                        }
+
+                        val data = root.optJSONObject("data") ?: break
+                        val cdlist = data.optJSONArray("cdlist") ?: break
+                        val fetchedCount = cdlist.length()
+                        if (fetchedCount == 0) break
+
+                        var newInPage = 0
+                        for (i in 0 until fetchedCount) {
+                            val pl = cdlist.optJSONObject(i) ?: continue
+                            val songCount = pl.optInt("songnum", 0)
+                            if (songCount == 0) continue
+                            val id = pl.optLong("dissid", 0L)
+                            if (id <= 0L) continue
+                            val name = decodeBase64IfNeeded(pl.optString("dissname", ""))
+                            if (name.isBlank()) continue
+                            val previous = entitiesById.put(
+                                id,
+                                QqMusicPlaylistEntity(
+                                    id = id,
+                                    name = name,
+                                    coverUrl = pl.optString("logo", ""),
+                                    songCount = songCount,
+                                    lastSyncTime = System.currentTimeMillis()
+                                )
+                            )
+                            if (previous == null) newInPage += 1
+                        }
+
+                        start += fetchedCount
+
+                        val totalCandidates = listOf(
+                            data.optInt("total", -1),
+                            data.optInt("dissnum", -1),
+                            data.optInt("totaldissnum", -1),
+                            data.optInt("cdnum", -1),
+                            data.optInt("dirnum", -1)
                         )
-                        if (previous == null) newInPage += 1
-                    }
+                        val total = totalCandidates.firstOrNull { it > 0 } ?: -1
+                        val reachedTotal = total > 0 && start >= total
+                        val hasLikelyMore = fetchedCount >= QQ_USER_PLAYLIST_PAGE_SIZE
 
-                    start += fetchedCount
+                        if (reachedTotal || !hasLikelyMore) break
+                        if (newInPage == 0 && page > 0) {
+                            Timber.w("syncUserPlaylists: pagination returned no new playlists at page=$page, stopping")
+                            break
+                        }
 
-                    val totalCandidates = listOf(
-                        data.optInt("total", -1),
-                        data.optInt("dissnum", -1),
-                        data.optInt("totaldissnum", -1),
-                        data.optInt("cdnum", -1),
-                        data.optInt("dirnum", -1)
-                    )
-                    val total = totalCandidates.firstOrNull { it > 0 } ?: -1
-                    val reachedTotal = total > 0 && start >= total
-                    val hasLikelyMore = fetchedCount >= QQ_USER_PLAYLIST_PAGE_SIZE
-
-                    if (reachedTotal || !hasLikelyMore) break
-                    if (newInPage == 0 && page > 0) {
-                        Timber.w("syncUserPlaylists: pagination returned no new playlists at page=$page, stopping")
-                        break
-                    }
-
-                    page += 1
-                    if (page >= QQ_MAX_PLAYLIST_PAGES) {
-                        Timber.w("syncUserPlaylists: reached max page guard ($QQ_MAX_PLAYLIST_PAGES), stopping pagination")
-                        break
+                        page += 1
+                        if (page >= QQ_MAX_PLAYLIST_PAGES) {
+                            Timber.w("syncUserPlaylists: reached max page guard ($QQ_MAX_PLAYLIST_PAGES), stopping pagination")
+                            break
+                        }
                     }
                 }
 
@@ -405,10 +506,10 @@ class QqMusicRepository @Inject constructor(
         }
     }
 
-    suspend fun syncAllPlaylistsAndSongs(): Result<BulkSyncResult> {
+    suspend fun syncAllPlaylistsAndSongs(syncType: PlaylistSyncType = PlaylistSyncType.ALL): Result<BulkSyncResult> {
         return withContext(Dispatchers.IO) {
             runCatching {
-                val playlistResult = syncUserPlaylists().getOrElse { return@runCatching BulkSyncResult(0, 0, 0) }
+                val playlistResult = syncUserPlaylists(syncType).getOrElse { return@runCatching BulkSyncResult(0, 0, 0) }
                 if (playlistResult.isEmpty()) {
                     return@runCatching BulkSyncResult(0, 0, 0)
                 }

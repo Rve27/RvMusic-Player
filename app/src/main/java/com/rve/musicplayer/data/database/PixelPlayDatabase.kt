@@ -461,20 +461,12 @@ abstract class PixelPlayDatabase : RoomDatabase() {
          *
          * Safety: the `date_added` column may be absent on databases that were
          * created before it was part of the songs schema and later restored via
-         * Android auto-backup, so we add it defensively before indexing.
+         * Android auto-backup, so we repair the table defensively before indexing.
          */
         val MIGRATION_23_24 = object : Migration(23, 24) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Ensure date_added column exists before creating its index.
-                try {
-                    db.execSQL("ALTER TABLE songs ADD COLUMN date_added INTEGER NOT NULL DEFAULT 0")
-                } catch (_: Exception) {
-                    // Column already exists — expected for normal upgrade paths.
-                }
-
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_songs_content_uri_string ON songs(content_uri_string)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_songs_date_added ON songs(date_added)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_songs_duration ON songs(duration)")
+                ensureSongsTableHasDateAdded(db)
+                createSongsEntityIndexes(db)
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_favorites_timestamp ON favorites(timestamp)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_song_engagements_play_count ON song_engagements(play_count)")
             }
@@ -537,6 +529,181 @@ abstract class PixelPlayDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_playlist_songs_song_id ON playlist_songs(song_id)")
                 installFavoriteSyncTriggers(db)
             }
+        }
+
+        private fun ensureSongsTableHasDateAdded(db: SupportSQLiteDatabase) {
+            if (!tableExists(db, "songs")) {
+                recreateSongsTable(db)
+                return
+            }
+
+            if ("date_added" in getTableColumns(db, "songs")) {
+                return
+            }
+
+            try {
+                db.execSQL("ALTER TABLE songs ADD COLUMN date_added INTEGER NOT NULL DEFAULT 0")
+            } catch (_: Exception) {
+                // Some restored databases report the right version but still carry
+                // a drifted songs table. If ALTER TABLE did not stick, rebuild it.
+            }
+
+            if ("date_added" !in getTableColumns(db, "songs")) {
+                recreateSongsTable(db)
+            }
+        }
+
+        private fun recreateSongsTable(db: SupportSQLiteDatabase) {
+            val songsTableExists = tableExists(db, "songs")
+            val columns = if (songsTableExists) getTableColumns(db, "songs") else emptySet()
+
+            db.execSQL("DROP TABLE IF EXISTS songs_new")
+            db.execSQL(
+                """
+                    CREATE TABLE songs_new (
+                        id INTEGER NOT NULL,
+                        title TEXT NOT NULL,
+                        artist_name TEXT NOT NULL,
+                        artist_id INTEGER NOT NULL,
+                        album_artist TEXT,
+                        album_name TEXT NOT NULL,
+                        album_id INTEGER NOT NULL,
+                        content_uri_string TEXT NOT NULL,
+                        album_art_uri_string TEXT,
+                        duration INTEGER NOT NULL,
+                        genre TEXT,
+                        file_path TEXT NOT NULL,
+                        parent_directory_path TEXT NOT NULL,
+                        is_favorite INTEGER NOT NULL DEFAULT 0,
+                        lyrics TEXT DEFAULT null,
+                        track_number INTEGER NOT NULL DEFAULT 0,
+                        year INTEGER NOT NULL DEFAULT 0,
+                        date_added INTEGER NOT NULL DEFAULT 0,
+                        mime_type TEXT,
+                        bitrate INTEGER,
+                        sample_rate INTEGER,
+                        telegram_chat_id INTEGER,
+                        telegram_file_id INTEGER,
+                        PRIMARY KEY(id),
+                        FOREIGN KEY(album_id) REFERENCES albums(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(artist_id) REFERENCES artists(id) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                """.trimIndent()
+            )
+
+            val requiredColumns = setOf(
+                "id",
+                "title",
+                "artist_name",
+                "artist_id",
+                "album_name",
+                "album_id",
+                "content_uri_string",
+                "duration",
+                "file_path"
+            )
+
+            // If the restored table still has the core song columns, preserve rows.
+            // Otherwise prefer a clean empty table over another migration-time crash.
+            if (songsTableExists && requiredColumns.all(columns::contains)) {
+                val albumArtistExpr = columnExpr(columns, "album_artist", "NULL")
+                val albumArtUriExpr = columnExpr(columns, "album_art_uri_string", "NULL")
+                val genreExpr = columnExpr(columns, "genre", "NULL")
+                val parentDirectoryPathExpr = columnExpr(columns, "parent_directory_path", "''")
+                val isFavoriteExpr = columnExpr(columns, "is_favorite", "0")
+                val lyricsExpr = columnExpr(columns, "lyrics", "NULL")
+                val trackNumberExpr = columnExpr(columns, "track_number", "0")
+                val yearExpr = columnExpr(columns, "year", "0")
+                val dateAddedExpr = columnExpr(columns, "date_added", "0")
+                val mimeTypeExpr = columnExpr(columns, "mime_type", "NULL")
+                val bitrateExpr = columnExpr(columns, "bitrate", "NULL")
+                val sampleRateExpr = columnExpr(columns, "sample_rate", "NULL")
+                val telegramChatIdExpr = columnExpr(columns, "telegram_chat_id", "NULL")
+                val telegramFileIdExpr = columnExpr(columns, "telegram_file_id", "NULL")
+
+                db.execSQL(
+                    """
+                        INSERT OR REPLACE INTO songs_new (
+                            id,
+                            title,
+                            artist_name,
+                            artist_id,
+                            album_artist,
+                            album_name,
+                            album_id,
+                            content_uri_string,
+                            album_art_uri_string,
+                            duration,
+                            genre,
+                            file_path,
+                            parent_directory_path,
+                            is_favorite,
+                            lyrics,
+                            track_number,
+                            year,
+                            date_added,
+                            mime_type,
+                            bitrate,
+                            sample_rate,
+                            telegram_chat_id,
+                            telegram_file_id
+                        )
+                        SELECT
+                            id,
+                            title,
+                            artist_name,
+                            artist_id,
+                            $albumArtistExpr,
+                            album_name,
+                            album_id,
+                            content_uri_string,
+                            $albumArtUriExpr,
+                            duration,
+                            $genreExpr,
+                            file_path,
+                            $parentDirectoryPathExpr,
+                            $isFavoriteExpr,
+                            $lyricsExpr,
+                            $trackNumberExpr,
+                            $yearExpr,
+                            $dateAddedExpr,
+                            $mimeTypeExpr,
+                            $bitrateExpr,
+                            $sampleRateExpr,
+                            $telegramChatIdExpr,
+                            $telegramFileIdExpr
+                        FROM songs
+                        WHERE id IS NOT NULL
+                          AND title IS NOT NULL
+                          AND artist_name IS NOT NULL
+                          AND artist_id IS NOT NULL
+                          AND album_name IS NOT NULL
+                          AND album_id IS NOT NULL
+                          AND content_uri_string IS NOT NULL
+                          AND duration IS NOT NULL
+                          AND file_path IS NOT NULL
+                    """.trimIndent()
+                )
+            }
+
+            if (songsTableExists) {
+                db.execSQL("DROP TABLE songs")
+            }
+
+            db.execSQL("ALTER TABLE songs_new RENAME TO songs")
+            createSongsEntityIndexes(db)
+        }
+
+        private fun createSongsEntityIndexes(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_songs_title ON songs(title)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_songs_album_id ON songs(album_id)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_songs_artist_id ON songs(artist_id)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_songs_artist_name ON songs(artist_name)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_songs_genre ON songs(genre)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_songs_parent_directory_path ON songs(parent_directory_path)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_songs_content_uri_string ON songs(content_uri_string)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_songs_date_added ON songs(date_added)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_songs_duration ON songs(duration)")
         }
 
         private fun recreatePlaylistsTable(db: SupportSQLiteDatabase) {
