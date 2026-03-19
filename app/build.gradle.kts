@@ -12,7 +12,11 @@ plugins {
 
 android {
     namespace = "com.rve.musicplayer"
-    compileSdk = 35
+    compileSdk {
+        version = release(36) {
+            minorApiLevel = 1
+        }
+    }
 
     androidResources {
         noCompress.add("tflite")
@@ -28,8 +32,8 @@ android {
 
     defaultConfig {
         applicationId = "com.rve.musicplayer"
-        minSdk = 29
-        targetSdk = 35
+        minSdk = 33
+        targetSdk = 36
         versionCode = (project.findProperty("APP_VERSION_CODE") as String).toInt()
         versionName = project.findProperty("APP_VERSION_NAME") as String
 
@@ -110,6 +114,8 @@ android {
             isUniversalApk = true // 同时生成通用包（保留调试用途）
         }
     }
+    compileSdkMinor = 1
+    buildToolsVersion = "36.1.0"
 
     // AAB bundle 配置：通过 Google Play 分发时自动按架构拆分（推荐）
     bundle {
