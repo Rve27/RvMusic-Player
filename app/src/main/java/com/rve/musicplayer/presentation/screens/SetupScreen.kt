@@ -775,7 +775,7 @@ fun MediaPermissionPage(
     PermissionPageLayout(
         title = "Media Permission",
         granted = isGranted,
-        description = "PixelPlayer needs access to your audio files to build your music library.",
+        description = "RvMusic Player needs access to your audio files to build your music library.",
         buttonText = if (isGranted) "Permission Granted" else "Grant Media Permission",
         buttonEnabled = !isGranted,
         icons = mediaIcons,
@@ -847,7 +847,7 @@ fun AlarmsPermissionPage(
     PermissionPageLayout(
         title = "Alarms & Reminders",
         granted = isGranted,
-        description = "Optional, but recommended if you use Sleep Timer and want PixelPlayer to stop playback exactly on time.",
+        description = "Optional, but recommended if you use Sleep Timer and want RvMusic Player to stop playback exactly on time.",
         buttonText = if (isGranted) "Permission Granted" else "Grant Permission",
         buttonEnabled = !isGranted,
         icons = icons,
@@ -884,7 +884,7 @@ fun AllFilesPermissionPage(uiState: SetupUiState) {
     PermissionPageLayout(
         title = "All Files Access",
         granted = isGranted,
-        description = "For some Android versions, PixelPlayer needs broader file access to find all your music.",
+        description = "For some Android versions, RvMusic Player needs broader file access to find all your music.",
         buttonText = if(isGranted) "Permission Granted" else "Go to Settings",
         buttonEnabled = !isGranted,
         icons = fileIcons,
@@ -910,7 +910,7 @@ fun BackupRestorePage(
 
     PermissionPageLayout(
         title = "Do you have a backup?",
-        description = "If you already have a PixelPlayer backup, restore it now and skip most of the remaining setup on this device.",
+        description = "If you already have a RvMusic Player backup, restore it now and skip most of the remaining setup on this device.",
         buttonText = when {
             uiState.isInspectingBackup -> "Inspecting backup"
             uiState.isRestoringBackup -> "Restoring backup"
@@ -1502,7 +1502,7 @@ fun BatteryOptimizationPage(
     PermissionPageLayout(
         title = "Battery Optimization",
         granted = isIgnoringBatteryOptimizations,
-        description = "Some Android devices aggressively kill background apps. Disable battery optimization for PixelPlayer to prevent unexpected playback interruptions.",
+        description = "Some Android devices aggressively kill background apps. Disable battery optimization for RvMusic Player to prevent unexpected playback interruptions.",
         buttonText = if (isIgnoringBatteryOptimizations) "Permission Granted" else "Disable Optimization",
         buttonEnabled = !isIgnoringBatteryOptimizations,
         icons = batteryIcons,
