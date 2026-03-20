@@ -47,16 +47,16 @@ fun TabAnimation(
     val offsetX = remember { Animatable(0f) }
     var hasAnimatedSelectionChange by remember { mutableStateOf(false) }
 
-    val animationSpec = tween<Float>(durationMillis = 250, easing = FastOutSlowInEasing)
+    val slowSpatial = MaterialTheme.motionScheme.slowSpatialSpec<Float>()
 
     val backgroundColor by animateColorAsState(
         targetValue = if (isSelected) selectedColor else unselectedColor,
-        animationSpec = tween(durationMillis = 200),
+        animationSpec = MaterialTheme.motionScheme.slowEffectsSpec(),
         label = "Tab Background Color"
     )
     val contentColor by animateColorAsState(
         targetValue = if (isSelected) onSelectedColor else onUnselectedColor,
-        animationSpec = tween(durationMillis = 200),
+        animationSpec = MaterialTheme.motionScheme.slowEffectsSpec(),
         label = "Tab Content Color"
     )
 
@@ -71,8 +71,8 @@ fun TabAnimation(
 
         if (isSelected) {
             launch {
-                scale.animateTo(1.05f, animationSpec = animationSpec)
-                scale.animateTo(1f, animationSpec = animationSpec)
+                scale.animateTo(1.05f, animationSpec = slowSpatial)
+                scale.animateTo(1f, animationSpec = slowSpatial)
             }
         } else {
             scale.snapTo(1f)
@@ -85,8 +85,8 @@ fun TabAnimation(
                 // Move neighbors slightly
                 val offsetValue = 12f * direction
                 launch {
-                    offsetX.animateTo(offsetValue, animationSpec = animationSpec)
-                    offsetX.animateTo(0f, animationSpec = animationSpec)
+                    offsetX.animateTo(offsetValue, animationSpec = slowSpatial)
+                    offsetX.animateTo(0f, animationSpec = slowSpatial)
                 }
             } else {
                 // Instantly reset offset for non-neighbor tabs
