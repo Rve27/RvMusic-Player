@@ -165,7 +165,7 @@ fun CrashReportDialog(
                         onClick = {
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, "PixelPlayer Crash Report")
+                                putExtra(Intent.EXTRA_SUBJECT, "RvMusic Player Crash Report")
                                 putExtra(Intent.EXTRA_TEXT, crashLog.getFullLog())
                             }
                             context.startActivity(Intent.createChooser(shareIntent, "Share crash report"))
