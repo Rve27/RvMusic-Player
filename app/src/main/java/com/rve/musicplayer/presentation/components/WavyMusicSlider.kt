@@ -89,7 +89,7 @@ fun WavyMusicSlider(
 
     val thumbInteractionFraction by animateFloatAsState(
         targetValue = if (isInteracting) 1f else 0f,
-        animationSpec = tween(250, easing = FastOutSlowInEasing),
+        animationSpec = MaterialTheme.motionScheme.slowSpatialSpec(),
         label = "ThumbInteractionAnim"
     )
 
@@ -98,13 +98,15 @@ fun WavyMusicSlider(
 
     val animatedWaveAmplitude by animateDpAsState(
         targetValue = if (shouldShowWave) waveAmplitudeWhenPlaying else 0.dp,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        animationSpec = MaterialTheme.motionScheme.slowSpatialSpec(),
         label = "WaveAmplitudeAnim"
     )
 
     // FASE CONDICIONAL: si la onda no se muestra, no hay transición infinita ni invalidaciones.
     val phaseShiftAnim = remember { Animatable(0f) }
     val phaseShift = phaseShiftAnim.value
+
+    val slowSpatial = MaterialTheme.motionScheme.slowSpatialSpec<Float>()
 
     LaunchedEffect(shouldShowWave, waveAnimationDuration) {
         if (shouldShowWave && waveAnimationDuration > 0) {
@@ -114,7 +116,7 @@ fun WavyMusicSlider(
                 phaseShiftAnim.snapTo(start)
                 phaseShiftAnim.animateTo(
                     targetValue = start + fullRotation,
-                    animationSpec = tween(durationMillis = waveAnimationDuration, easing = LinearEasing)
+                    animationSpec = slowSpatial,
                 )
             }
         }
