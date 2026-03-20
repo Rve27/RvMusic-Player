@@ -215,6 +215,12 @@ constructor(
                                 } else {
                                     musicDao.getAllArtistsListRaw()
                                 }
+                        val allExistingAlbums =
+                                if (syncMode == SyncMode.REBUILD) {
+                                    emptyList()
+                                } else {
+                                    musicDao.getAllAlbumsList(emptyList(), false)
+                                }
 
                         val existingArtistImageUrls =
                                 allExistingArtists.associate { it.id to it.imageUrl }
@@ -232,6 +238,7 @@ constructor(
                                         artistDelimiters = artistDelimiters,
                                         groupByAlbumArtist = groupByAlbumArtist,
                                         existingArtistImageUrls = existingArtistImageUrls,
+                                        existingAlbums = allExistingAlbums,
                                         existingArtistIdMap = existingArtistIdMap,
                                         initialMaxArtistId = maxArtistId
                                 )
@@ -394,6 +401,7 @@ constructor(
             artistDelimiters: List<String>,
             groupByAlbumArtist: Boolean,
             existingArtistImageUrls: Map<Long, String?>,
+            existingAlbums: List<AlbumEntity>,
             existingArtistIdMap: MutableMap<String, Long>,
             initialMaxArtistId: Long
     ): MultiArtistProcessResult {
@@ -403,9 +411,17 @@ constructor(
         
         val allCrossRefs = mutableListOf<SongArtistCrossRef>()
         val artistTrackCounts = mutableMapOf<Long, Int>()
-        val albumMap = mutableMapOf<Pair<String, String>, Long>()
+        val albumMap = mutableMapOf<AlbumGroupingKey, Long>()
         val artistSplitCache = mutableMapOf<String, List<String>>()
         val correctedSongs = ArrayList<SongEntity>(songs.size)
+
+        existingAlbums
+            .sortedBy { it.id }
+            .forEach { album ->
+                buildAlbumGroupingKeys(album).forEach { key ->
+                    albumMap.putIfAbsent(key, album.id)
+                }
+            }
 
         songs.forEach { song ->
             val rawArtistName = song.artistName
@@ -447,19 +463,8 @@ constructor(
             }
 
             // --- Album Logic ---
-            val rawAlbumName = song.albumName.trim()
-            val albumIdentityArtist = if (groupByAlbumArtist) {
-                song.albumArtist?.trim()?.takeIf { it.isNotEmpty() } ?: primaryArtistName
-            } else {
-                primaryArtistName
-            }
-            
-            val albumKey = rawAlbumName to albumIdentityArtist
-            
-            if (!albumMap.containsKey(albumKey)) {
-                albumMap[albumKey] = song.albumId 
-            }
-            val finalAlbumId = albumMap[albumKey] ?: song.albumId // fallback
+            val albumKey = buildAlbumGroupingKey(song)
+            val finalAlbumId = albumMap.getOrPut(albumKey) { song.albumId }
 
             correctedSongs.add(
                     song.copy(
@@ -486,12 +491,16 @@ constructor(
         val albumEntities = correctedSongs.groupBy { it.albumId }.map { (catAlbumId, songsInAlbum) ->
              val firstSong = songsInAlbum.first()
              val representativeAlbumArt = songsInAlbum.firstNotNullOfOrNull { it.albumArtUriString }
-             // Determine Album Artist Name
-             val determinedAlbumArtist = firstSong.albumArtist?.takeIf { it.isNotBlank() } 
-                 ?: firstSong.artistName
-                 
-             // Determine Album Artist ID (best effort lookup)
-             val determinedAlbumArtistId = artistNameToId[determinedAlbumArtist] ?: 0L
+             val determinedAlbumArtist = chooseAlbumDisplayArtist(
+                 songs = songsInAlbum,
+                 preferAlbumArtist = groupByAlbumArtist
+             )
+             val determinedAlbumArtistId = resolveAlbumDisplayArtistId(
+                 displayArtist = determinedAlbumArtist,
+                 songs = songsInAlbum,
+                 artistNameToId = artistNameToId,
+                 artistDelimiters = artistDelimiters
+             )
 
              AlbumEntity(
                  id = catAlbumId,
@@ -928,6 +937,10 @@ constructor(
         var title = raw.title
         var artist = raw.artist
         var album = raw.album
+        var albumArtist = resolveAlbumArtist(
+            rawAlbumArtist = raw.albumArtist,
+            metadataAlbumArtist = null
+        )
         var trackNumber = raw.trackNumber
         var year = raw.year
         var genre: String? = genreMap[raw.id] // Use mapped genre as default
@@ -954,6 +967,10 @@ constructor(
                         if (!meta.title.isNullOrBlank()) title = meta.title
                         if (!meta.artist.isNullOrBlank()) artist = meta.artist
                         if (!meta.album.isNullOrBlank()) album = meta.album
+                        albumArtist = resolveAlbumArtist(
+                            rawAlbumArtist = albumArtist,
+                            metadataAlbumArtist = meta.albumArtist
+                        )
                         if (!meta.genre.isNullOrBlank()) genre = meta.genre
                         if (meta.trackNumber != null) trackNumber = meta.trackNumber
                         if (meta.year != null) year = meta.year
@@ -979,7 +996,7 @@ constructor(
                 title = title,
                 artistName = artist,
                 artistId = raw.artistId,
-                albumArtist = raw.albumArtist,
+                albumArtist = albumArtist,
                 albumName = album,
                 albumId = raw.albumId,
                 contentUriString = contentUriString,
