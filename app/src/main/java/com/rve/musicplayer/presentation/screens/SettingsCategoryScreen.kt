@@ -1056,7 +1056,7 @@ fun SettingsCategoryScreen(
                                 addBottomSpace = false
                             ) {
                                 SettingsItem(
-                                    title = "About PixelPlayer",
+                                    title = "About RvMusic Player",
                                     subtitle = "App version, credits, and more.",
                                     leadingIcon = { Icon(Icons.Outlined.Info, null, tint = MaterialTheme.colorScheme.secondary) },
                                     trailingIcon = { Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
@@ -1274,7 +1274,7 @@ fun SettingsCategoryScreen(
             onSelectionChanged = { exportSections = it },
             onConfirm = {
                 showExportDataDialog = false
-                val fileName = "PixelPlayer_Backup_${System.currentTimeMillis()}.pxpl"
+                val fileName = "RvMusic Player_Backup_${System.currentTimeMillis()}.pxpl"
                 exportLauncher.launch(fileName)
             }
         )

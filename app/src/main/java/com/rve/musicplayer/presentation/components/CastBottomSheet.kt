@@ -463,7 +463,7 @@ private fun CastPermissionStep(
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
         )
         Text(
-            text = "Allow PixelPlayer to see your nearby devices and current Wi‑Fi so we can keep your cast, Bluetooth audio, and speakers in sync.",
+            text = "Allow RvMusic Player to see your nearby devices and current Wi‑Fi so we can keep your cast, Bluetooth audio, and speakers in sync.",
             style = MaterialTheme.typography.bodyMedium,
             color = colors.onSurfaceVariant
         )

@@ -1166,7 +1166,7 @@ class PlaylistViewModel @Inject constructor(
                     musicDir.mkdirs()
                 }
                 
-                val exportDir = File(musicDir, "PixelPlayer Exports")
+                val exportDir = File(musicDir, "RvMusic Player Exports")
                 if (!exportDir.exists()) {
                     exportDir.mkdirs()
                 }
@@ -1186,7 +1186,7 @@ class PlaylistViewModel @Inject constructor(
                 }
                 
                 Log.d("PlaylistViewModel", "Successfully exported ${playlistIds.size} playlists to $exportDir")
-                Toast.makeText(context, "Exported ${playlistsWithSongs.size} playlist(s) to Music/PixelPlayer Exports", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Exported ${playlistsWithSongs.size} playlist(s) to Music/RvMusic Player Exports", Toast.LENGTH_SHORT).show()
                 
             } catch (e: Exception) {
                 Log.e("PlaylistViewModel", "Error exporting playlists", e)
