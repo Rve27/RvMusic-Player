@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -102,7 +103,7 @@ fun WavySliderExpressive(
 
     val thumbInteractionFraction by animateFloatAsState(
         targetValue = if (isInteracting) 1f else 0f,
-        animationSpec = tween(250, easing = FastOutSlowInEasing),
+        animationSpec = MaterialTheme.motionScheme.slowSpatialSpec(),
         label = "ThumbInteractionAnim"
     )
     val animatedAmplitude by animateFloatAsState(
