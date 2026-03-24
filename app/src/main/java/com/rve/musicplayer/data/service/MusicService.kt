@@ -1888,7 +1888,7 @@ class MusicService : MediaLibraryService() {
     private fun loadArtworkBytesForWidget(uri: Uri): ByteArray? {
         val scheme = uri.scheme?.lowercase()
         return when (scheme) {
-            "content", "file", "android.resource", com.theveloper.pixelplay.utils.LocalArtworkUri.SCHEME -> {
+            "content", "file", "android.resource", com.rve.musicplayer.utils.LocalArtworkUri.SCHEME -> {
                 runCatching {
                     AlbumArtUtils.openArtworkInputStream(applicationContext, uri)?.use { input ->
                         readBytesCapped(input, MAX_WIDGET_ARTWORK_BYTES)

@@ -3,9 +3,13 @@ package com.rve.musicplayer.presentation.components.scoped
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
+import coil.Coil
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import coil.size.Size
 import com.rve.musicplayer.data.model.Song
 import com.rve.musicplayer.utils.LocalArtworkUri

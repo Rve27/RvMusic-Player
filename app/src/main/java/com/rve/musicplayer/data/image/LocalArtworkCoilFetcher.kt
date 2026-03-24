@@ -6,8 +6,8 @@ import coil.fetch.FetchResult
 import coil.fetch.Fetcher
 import coil.fetch.SourceResult
 import coil.request.Options
-import com.theveloper.pixelplay.utils.AlbumArtUtils
-import com.theveloper.pixelplay.utils.LocalArtworkUri
+import com.rve.musicplayer.utils.AlbumArtUtils
+import com.rve.musicplayer.utils.LocalArtworkUri
 import okio.Path.Companion.toPath
 import javax.inject.Inject
 
