@@ -14,8 +14,11 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.FormatAlignLeft
+import androidx.compose.material.icons.automirrored.rounded.FormatAlignRight
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.FormatAlignCenter
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -55,6 +58,8 @@ fun LyricsMoreBottomSheet(
     onToggleSyncControls: () -> Unit,
     isImmersiveTemporarilyDisabled: Boolean,
     onSetImmersiveTemporarilyDisabled: (Boolean) -> Unit,
+    lyricsAlignment: String,
+    onLyricsAlignmentChange: (String) -> Unit,
     // BottomToggleRow params
     isShuffleEnabled: Boolean,
     repeatMode: Int,
@@ -185,6 +190,57 @@ fun LyricsMoreBottomSheet(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            // Appearance Group
+            Column(
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                 Text(
+                     modifier = Modifier
+                         .padding(start = 6.dp, bottom = 6.dp),
+                     text = "Appearance",
+                     color = accentColor,
+                     style = MaterialTheme.typography.bodyLargeEmphasized
+                 )
+                ListItem(
+                    headlineContent = { Text("Alignment") },
+                    leadingContent = {
+                        Icon(
+                            imageVector = when (lyricsAlignment) {
+                                "center" -> Icons.Rounded.FormatAlignCenter
+                                "right" -> Icons.AutoMirrored.Rounded.FormatAlignRight
+                                else -> Icons.AutoMirrored.Rounded.FormatAlignLeft
+                            },
+                            contentDescription = null
+                        )
+                    },
+                    trailingContent = {
+                        Text(
+                            text = lyricsAlignment.replaceFirstChar { it.uppercase() },
+                            color = contentColor.copy(alpha = 0.7f),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(itemBackgroundColor)
+                        .clickable {
+                            val next = when (lyricsAlignment) {
+                                "left" -> "center"
+                                "center" -> "right"
+                                else -> "left"
+                            }
+                            onLyricsAlignmentChange(next)
+                        },
+                    colors = ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                        headlineColor = contentColor,
+                        leadingIconColor = contentColor
+                    )
                 )
             }
 

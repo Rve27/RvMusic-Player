@@ -48,7 +48,7 @@ class PixelPlayApplication : Application(), ImageLoaderFactory, Configuration.Pr
     lateinit var navidromeCoilFetcherFactory: dagger.Lazy<com.rve.musicplayer.data.image.NavidromeCoilFetcher.Factory>
 
     @Inject
-    lateinit var localArtworkCoilFetcherFactory: dagger.Lazy<com.theveloper.pixelplay.data.image.LocalArtworkCoilFetcher.Factory>
+    lateinit var localArtworkCoilFetcherFactory: dagger.Lazy<com.rve.musicplayer.data.image.LocalArtworkCoilFetcher.Factory>
 
     // AÑADE EL COMPANION OBJECT
     companion object {

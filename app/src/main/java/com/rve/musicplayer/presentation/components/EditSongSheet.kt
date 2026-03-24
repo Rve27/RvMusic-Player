@@ -71,7 +71,8 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.rve.musicplayer.R
+import androidx.media3.common.Player
+import com.rve.musicplayer.data.media.AudioMetadataReader
 import com.rve.musicplayer.data.media.CoverArtUpdate
 import dev.shreyaspatil.capturable.controller.rememberCaptureController
 import java.io.ByteArrayOutputStream
@@ -152,6 +153,24 @@ private fun EditSongContent(
         trackNumber = song.trackNumber.toString()
         coverArtPreview = null
         editedCoverArt = null
+
+        // Try to read embedded lyrics if they were not cached in the database
+        if (lyrics.isBlank() && song.path.isNotBlank()) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val file = java.io.File(song.path)
+                    if (file.exists()) {
+                        AudioMetadataReader.read(file)?.lyrics?.let { embeddedLyrics ->
+                            if (embeddedLyrics.isNotBlank()) {
+                                lyrics = embeddedLyrics
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to read embedded lyrics for EditSongSheet")
+                }
+            }
+        }
     }
 
     if (isGenerating) {
