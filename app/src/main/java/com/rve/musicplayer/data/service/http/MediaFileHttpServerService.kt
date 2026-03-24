@@ -828,8 +828,14 @@ class MediaFileHttpServerService : Service() {
 
                 val songIdLong = cursor.getLong(idCol)
                 val albumId = cursor.getLong(albumIdCol)
+                val path = cursor.getString(dataCol).orEmpty()
                 val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, songIdLong)
-                val albumArtUri = AlbumArtUtils.getCachedAlbumArtUri(this, songIdLong)?.toString()
+                val albumArtUri = AlbumArtUtils.getAlbumArtUri(
+                    appContext = this,
+                    path = path,
+                    songId = songIdLong,
+                    forceRefresh = false
+                )
 
                 Song(
                     id = songIdLong.toString(),
@@ -839,7 +845,7 @@ class MediaFileHttpServerService : Service() {
                     album = cursor.getString(albumCol).orEmpty(),
                     albumId = albumId,
                     albumArtist = if (albumArtistCol >= 0) cursor.getString(albumArtistCol) else null,
-                    path = cursor.getString(dataCol).orEmpty(),
+                    path = path,
                     contentUriString = contentUri.toString(),
                     albumArtUriString = albumArtUri,
                     duration = cursor.getLong(durationCol),

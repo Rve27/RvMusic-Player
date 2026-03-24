@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.rve.musicplayer.data.model.Album
+import com.rve.musicplayer.utils.LocalArtworkUri
 import com.rve.musicplayer.utils.normalizeMetadataTextOrEmpty
 
 @Entity(
@@ -25,14 +26,19 @@ data class AlbumEntity(
     @ColumnInfo(name = "year") val year: Int
 )
 
+private fun mediaStoreAlbumArtUri(albumId: Long): String {
+    return android.content.ContentUris.withAppendedId(
+        android.net.Uri.parse("content://media/external/audio/albumart"),
+        albumId
+    ).toString()
+}
+
 fun AlbumEntity.toAlbum(): Album {
-    // If stored art URI is null/blank, fall back to the standard content URI
-    // that MediaStore reliably resolves (same as MediaStoreSongRepository uses)
-    val effectiveAlbumArtUri = this.albumArtUriString?.takeIf { it.isNotBlank() }
-        ?: android.content.ContentUris.withAppendedId(
-            android.net.Uri.parse("content://media/external/audio/albumart"),
-            this.id
-        ).toString()
+    val effectiveAlbumArtUri = when {
+        this.albumArtUriString.isNullOrBlank() -> mediaStoreAlbumArtUri(this.id)
+        LocalArtworkUri.looksLikeVolatileArtworkUri(this.albumArtUriString) -> mediaStoreAlbumArtUri(this.id)
+        else -> this.albumArtUriString
+    }
 
     return Album(
         id = this.id,

@@ -178,7 +178,7 @@ fun DailyMixScreen(
                 showSongInfoSheet = false
             },
             onAddToPlayList = {
-                    showPlaylistBottomSheet = true;
+                showPlaylistBottomSheet = true;
             },
             onDeleteFromDevice = playerViewModel::deleteFromDevice,
             onNavigateToAlbum = {
@@ -276,7 +276,8 @@ fun DailyMixScreen(
                                 if (dailyMixSongs.isNotEmpty()) {
                                     playerViewModel.playSongsShuffled(
                                         songsToPlay = dailyMixSongs,
-                                        queueName = "Daily Mix"
+                                        queueName = "Daily Mix",
+                                        startAtZero = true,
                                     )
                                 }
                             },

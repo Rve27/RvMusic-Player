@@ -983,7 +983,7 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             val randomSongs = musicRepository.getRandomSongs(limit = 500)
             if (randomSongs.isNotEmpty()) {
-                playSongsShuffled(randomSongs, "All Songs (Shuffled)")
+                playSongsShuffled(randomSongs, "All Songs (Shuffled)", startAtZero = true)
             }
         }
     }
@@ -1020,7 +1020,7 @@ class PlayerViewModel @Inject constructor(
                     // Shuffle a random subset (up to 500) to avoid loading entire library
                     val subset = if (songs.size > 500) songs.shuffled().take(500) else songs.toList()
                     Timber.d("[TileDebug] Calling playSongsShuffled with ${subset.size} songs")
-                    playSongsShuffled(subset, "All Songs (Shuffled)")
+                    playSongsShuffled(subset, "All Songs (Shuffled)", startAtZero = true)
                 } else {
                     Timber.w("[TileDebug] No songs found even after sync - library may be empty")
                     sendToast("No songs found in library")
@@ -1041,7 +1041,7 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             val randomSongs = musicRepository.getRandomSongs(limit = 500)
             if (randomSongs.isNotEmpty()) {
-                playSongsShuffled(randomSongs, "All Songs (Shuffled)")
+                playSongsShuffled(randomSongs, "All Songs (Shuffled)", startAtZero = true)
             }
         }
     }
@@ -1053,7 +1053,7 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             val favSongs = musicRepository.getFavoriteSongsOnce(playerUiState.value.currentStorageFilter)
             if (favSongs.isNotEmpty()) {
-                playSongsShuffled(favSongs, "Liked Songs (Shuffled)")
+                playSongsShuffled(favSongs, "Liked Songs (Shuffled)", startAtZero = true)
             }
         }
     }
@@ -1065,7 +1065,7 @@ class PlayerViewModel @Inject constructor(
                 val randomAlbum = allAlbums.random()
                 val albumSongs = musicRepository.getSongsForAlbum(randomAlbum.id).first()
                 if (albumSongs.isNotEmpty()) {
-                    playSongsShuffled(albumSongs, randomAlbum.title)
+                    playSongsShuffled(albumSongs, randomAlbum.title, startAtZero = true)
                 }
             }
         }
@@ -1078,7 +1078,7 @@ class PlayerViewModel @Inject constructor(
                 val randomArtist = allArtists.random()
                 val artistSongs = musicRepository.getSongsForArtist(randomArtist.id).first()
                 if (artistSongs.isNotEmpty()) {
-                    playSongsShuffled(artistSongs, randomArtist.name)
+                    playSongsShuffled(artistSongs, randomArtist.name, startAtZero = true)
                 }
             }
         }

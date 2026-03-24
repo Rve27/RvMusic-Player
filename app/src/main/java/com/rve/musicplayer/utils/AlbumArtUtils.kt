@@ -3,6 +3,7 @@ package com.rve.musicplayer.utils
 import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
+import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import kotlinx.coroutines.CoroutineScope
@@ -11,6 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileInputStream
+import java.io.InputStream
 
 object AlbumArtUtils {
 
@@ -27,13 +29,19 @@ object AlbumArtUtils {
         path: String,
         songId: Long,
         forceRefresh: Boolean
-    ): String? = getEmbeddedAlbumArtUri(appContext, path, songId, forceRefresh)?.toString()
+    ): String? {
+        return if (hasLocalAlbumArt(appContext, path, songId, forceRefresh)) {
+            LocalArtworkUri.buildSongUri(songId)
+        } else {
+            null
+        }
+    }
 
     fun getCachedAlbumArtUri(
         appContext: Context,
         songId: Long
     ): Uri? {
-        val cachedFile = albumArtCacheFile(appContext, songId)
+        val cachedFile = getCachedAlbumArtFile(appContext, songId)
         if (!cachedFile.exists()) return null
 
         cachedFile.setLastModified(System.currentTimeMillis())
@@ -44,11 +52,11 @@ object AlbumArtUtils {
         appContext: Context,
         songId: Long
     ): Boolean {
-        return albumArtCacheFile(appContext, songId).exists()
+        return getCachedAlbumArtFile(appContext, songId).exists()
     }
 
     /**
-     * Enhanced embedded art extraction with better error handling
+     * Enhanced album art detection without eagerly persisting the whole library to cache.
      */
     fun getEmbeddedAlbumArtUri(
         appContext: Context,
@@ -56,12 +64,96 @@ object AlbumArtUtils {
         songId: Long,
         deepScan: Boolean
     ): Uri? {
-        val audioFile = File(filePath)
-        if (!audioFile.exists() || !audioFile.canRead()) {
+        ensureAlbumArtCachedFile(appContext, songId, filePath, deepScan)?.let { cachedFile ->
+            return shareableCacheUri(appContext, cachedFile)
+        }
+        return null
+    }
+
+    fun ensureAlbumArtCachedFile(
+        appContext: Context,
+        songId: Long,
+        filePath: String? = null,
+        forceRefresh: Boolean = false
+    ): File? {
+        val cachedFile = getCachedAlbumArtFile(appContext, songId)
+        val noArtFile = noArtMarkerFile(appContext, songId)
+
+        if (!forceRefresh) {
+            if (cachedFile.exists() && cachedFile.length() > 0) {
+                cachedFile.setLastModified(System.currentTimeMillis())
+                return cachedFile
+            }
+            if (noArtFile.exists()) {
+                return null
+            }
+        } else {
+            cachedFile.delete()
+            noArtFile.delete()
+        }
+
+        val resolvedPath = filePath ?: resolveSongMediaStoreInfo(appContext, songId)?.path ?: return null
+        if (!File(resolvedPath).exists()) {
             return null
         }
 
-        val cachedFile = albumArtCacheFile(appContext, songId)
+        getExternalAlbumArtUri(resolvedPath)?.let { externalUri ->
+            if (copyUriToCache(appContext, externalUri, cachedFile) != null) {
+                noArtFile.delete()
+                return cachedFile
+            }
+        }
+
+        extractEmbeddedAlbumArtBytes(resolvedPath)?.let { bytes ->
+            cacheAlbumArtBytes(appContext, bytes, songId)
+            return cachedFile.takeIf { it.exists() && it.length() > 0 }
+        }
+
+        resolveSongMediaStoreInfo(appContext, songId)?.albumId?.let { albumId ->
+            getMediaStoreAlbumArtUri(appContext, albumId)?.let { mediaStoreUri ->
+                if (copyUriToCache(appContext, mediaStoreUri, cachedFile) != null) {
+                    noArtFile.delete()
+                    return cachedFile
+                }
+            }
+        }
+
+        cachedFile.delete()
+        noArtFile.createNewFile()
+        return null
+    }
+
+    fun openArtworkInputStream(
+        appContext: Context,
+        uri: Uri
+    ): InputStream? {
+        return when {
+            uri.scheme.equals(LocalArtworkUri.SCHEME, ignoreCase = true) -> {
+                val songId = LocalArtworkUri.parseSongId(uri.toString()) ?: return null
+                val resolvedPath = resolveSongMediaStoreInfo(appContext, songId)?.path
+                ensureAlbumArtCachedFile(
+                    appContext = appContext,
+                    songId = songId,
+                    filePath = resolvedPath
+                )?.inputStream()
+            }
+            uri.scheme.isNullOrBlank() && uri.toString().startsWith("/") -> File(uri.toString()).inputStream()
+            else -> appContext.contentResolver.openInputStream(uri)
+        }
+    }
+
+    private fun hasLocalAlbumArt(
+        appContext: Context,
+        filePath: String,
+        songId: Long,
+        deepScan: Boolean
+    ): Boolean {
+        val audioFile = File(filePath)
+        if (!audioFile.exists() || !audioFile.canRead()) {
+            return false
+        }
+
+        val cachedFile = getCachedAlbumArtFile(appContext, songId)
         val noArtFile = noArtMarkerFile(appContext, songId)
 
         if (!deepScan) {
@@ -69,38 +161,36 @@ object AlbumArtUtils {
                 if (cachedFile.exists()) {
                     cachedFile.delete()
                 }
-                return null
+                return false
             }
 
-            getCachedAlbumArtUri(appContext, songId)?.let { return it }
+            if (cachedFile.exists() && cachedFile.length() > 0) {
+                return true
+            }
         } else {
             noArtFile.delete()
         }
 
-        // Try to extract embedded art using pooled MediaMetadataRetriever.
-        return MediaMetadataRetrieverPool.withRetriever { retriever ->
-            try {
-                retriever.setDataSource(filePath)
-            } catch (e: IllegalArgumentException) {
-                // FileDescriptor fallback
-                try {
-                    FileInputStream(filePath).use { fis ->
-                        retriever.setDataSource(fis.fd)
-                    }
-                } catch (e2: Exception) {
-                    return@withRetriever null
-                }
-            }
-
-            val bytes = retriever.embeddedPicture
-            if (bytes != null && bytes.isNotEmpty()) {
-                saveAlbumArtToCache(appContext, bytes, songId)
-            } else {
-                cachedFile.delete()
-                noArtFile.createNewFile()
-                null
-            }
+        if (getExternalAlbumArtUri(filePath) != null) {
+            noArtFile.delete()
+            return true
         }
+
+        val hasEmbeddedArt = extractEmbeddedAlbumArtBytes(filePath)?.isNotEmpty() == true
+        if (hasEmbeddedArt) {
+            noArtFile.delete()
+            return true
+        }
+
+        val albumId = resolveSongMediaStoreInfo(appContext, songId)?.albumId
+        if (albumId != null && getMediaStoreAlbumArtUri(appContext, albumId) != null) {
+            noArtFile.delete()
+            return true
+        }
+
+        cachedFile.delete()
+        noArtFile.createNewFile()
+        return false
     }
 
     /**
@@ -181,7 +271,16 @@ object AlbumArtUtils {
      * Save embedded art to cache with unique naming
      */
     fun saveAlbumArtToCache(appContext: Context, bytes: ByteArray, songId: Long): Uri {
-        val file = albumArtCacheFile(appContext, songId)
+        val file = cacheAlbumArtBytes(appContext, bytes, songId)
+        return shareableCacheUri(appContext, file)
+    }
+
+    fun getCachedAlbumArtFile(appContext: Context, songId: Long): File {
+        return File(appContext.cacheDir, "song_art_${songId}.jpg")
+    }
+
+    private fun cacheAlbumArtBytes(appContext: Context, bytes: ByteArray, songId: Long): File {
+        val file = getCachedAlbumArtFile(appContext, songId)
 
         file.outputStream().use { outputStream ->
             outputStream.write(bytes)
@@ -193,15 +292,82 @@ object AlbumArtUtils {
             AlbumArtCacheManager.cleanCacheIfNeeded(appContext)
         }
 
-        return shareableCacheUri(appContext, file)
-    }
-
-    private fun albumArtCacheFile(appContext: Context, songId: Long): File {
-        return File(appContext.cacheDir, "song_art_${songId}.jpg")
+        return file
     }
 
     private fun noArtMarkerFile(appContext: Context, songId: Long): File {
         return File(appContext.cacheDir, "song_art_${songId}_no.jpg")
+    }
+
+    private data class MediaStoreSongInfo(
+        val path: String,
+        val albumId: Long?
+    )
+
+    private fun resolveSongMediaStoreInfo(
+        appContext: Context,
+        songId: Long
+    ): MediaStoreSongInfo? {
+        val selection = "${MediaStore.Audio.Media._ID} = ?"
+        val selectionArgs = arrayOf(songId.toString())
+        val projection = arrayOf(
+            MediaStore.Audio.Media.DATA,
+            MediaStore.Audio.Media.ALBUM_ID
+        )
+
+        return runCatching {
+            appContext.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val path = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA))
+                val albumId = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID))
+                MediaStoreSongInfo(
+                    path = path,
+                    albumId = albumId.takeIf { it > 0L }
+                )
+            }
+        }.getOrNull()
+    }
+
+    private fun extractEmbeddedAlbumArtBytes(filePath: String): ByteArray? {
+        return MediaMetadataRetrieverPool.withRetriever { retriever ->
+            try {
+                retriever.setDataSource(filePath)
+            } catch (e: IllegalArgumentException) {
+                try {
+                    FileInputStream(filePath).use { fis ->
+                        retriever.setDataSource(fis.fd)
+                    }
+                } catch (e2: Exception) {
+                    return@withRetriever null
+                }
+            }
+
+            retriever.embeddedPicture?.takeIf { it.isNotEmpty() }
+        }
+    }
+
+    private fun copyUriToCache(
+        appContext: Context,
+        sourceUri: Uri,
+        targetFile: File
+    ): File? {
+        return runCatching {
+            openArtworkInputStream(appContext, sourceUri)?.use { input ->
+                targetFile.outputStream().use { output -> input.copyTo(output) }
+            } ?: return null
+
+            appScope.launch {
+                AlbumArtCacheManager.cleanCacheIfNeeded(appContext)
+            }
+
+            targetFile
+        }.getOrNull()
     }
 
     private fun shareableCacheUri(appContext: Context, file: File): Uri {

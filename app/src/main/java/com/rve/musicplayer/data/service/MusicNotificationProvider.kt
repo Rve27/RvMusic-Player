@@ -1,6 +1,7 @@
 package com.rve.musicplayer.data.service
 
 object MusicNotificationProvider {
+    const val CUSTOM_COMMAND_CLOSE_PLAYER = "com.rve.musicplayer.CLOSE_PLAYER"
     const val CUSTOM_COMMAND_TOGGLE_SHUFFLE = "com.rve.musicplayer.TOGGLE_SHUFFLE"
     const val CUSTOM_COMMAND_SHUFFLE_ON = "com.rve.musicplayer.SHUFFLE_ON"
     const val CUSTOM_COMMAND_SHUFFLE_OFF = "com.rve.musicplayer.SHUFFLE_OFF"

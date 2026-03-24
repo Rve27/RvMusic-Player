@@ -175,9 +175,12 @@ class MediaStoreSongRepository @Inject constructor(
                     val albumId = cursor.getLong(albumIdCol)
 
                     // Album art (individual / cached per song)
-                    val albumArtUriString = AlbumArtUtils
-                        .getCachedAlbumArtUri(context, id)
-                        ?.toString()
+                    val albumArtUriString = AlbumArtUtils.getAlbumArtUri(
+                        appContext = context,
+                        path = path,
+                        songId = id,
+                        forceRefresh = false
+                    )
 
                     // Artists parsing (supports multiple artists separated by user delimiters)
                     val rawArtist = cursor.getString(artistCol).normalizeMetadataTextOrEmpty()

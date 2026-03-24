@@ -18,6 +18,7 @@ import com.rve.musicplayer.data.database.AlbumArtThemeDao
 import com.rve.musicplayer.data.database.AlbumArtThemeEntity
 import com.rve.musicplayer.data.database.StoredColorSchemeValues
 import com.rve.musicplayer.data.database.toComposeColor
+import com.rve.musicplayer.utils.LocalArtworkUri
 import com.rve.musicplayer.ui.theme.clearExtractedColorCache
 import com.rve.musicplayer.ui.theme.extractSeedColor
 import com.rve.musicplayer.ui.theme.generateColorSchemeFromSeed
@@ -166,6 +167,7 @@ class ColorSchemeProcessor @Inject constructor(
     private suspend fun loadBitmapForColorExtraction(uri: String, skipCache: Boolean): Bitmap? {
         return try {
             val cachePolicy = if (skipCache) CachePolicy.DISABLED else CachePolicy.ENABLED
+            val diskCachePolicy = if (LocalArtworkUri.isLocalArtworkUri(uri)) CachePolicy.DISABLED else cachePolicy
             
             val request = ImageRequest.Builder(context)
                 .data(uri)
@@ -173,7 +175,7 @@ class ColorSchemeProcessor @Inject constructor(
                 .size(Size(128, 128)) // Small size for fast processing
                 .bitmapConfig(Bitmap.Config.ARGB_8888)
                 .memoryCachePolicy(cachePolicy)
-                .diskCachePolicy(cachePolicy)
+                .diskCachePolicy(diskCachePolicy)
                 .build()
             
             val drawable = context.imageLoader.execute(request).drawable ?: return null

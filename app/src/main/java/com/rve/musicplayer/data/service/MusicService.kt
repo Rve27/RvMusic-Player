@@ -57,8 +57,10 @@ import com.rve.musicplayer.ui.glancewidget.ControlWidget4x2
 import com.rve.musicplayer.ui.glancewidget.PixelPlayGlanceWidget
 import com.rve.musicplayer.ui.glancewidget.PlayerActions
 import com.rve.musicplayer.ui.glancewidget.PlayerInfoStateDefinition
+import com.rve.musicplayer.utils.AlbumArtUtils
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -356,6 +358,7 @@ class MusicService : MediaLibraryService() {
 
                 val defaultResult = super.onConnect(session, controller)
                 val customCommands = listOf(
+                    MusicNotificationProvider.CUSTOM_COMMAND_CLOSE_PLAYER,
                     MusicNotificationProvider.CUSTOM_COMMAND_LIKE,
                     MusicNotificationProvider.CUSTOM_COMMAND_SET_FAVORITE_STATE,
                     MusicNotificationProvider.CUSTOM_COMMAND_TOGGLE_SHUFFLE,
@@ -397,6 +400,9 @@ class MusicService : MediaLibraryService() {
                 Timber.tag("MusicService")
                     .d("onCustomCommand received: ${customCommand.customAction}")
                 when (customCommand.customAction) {
+                    MusicNotificationProvider.CUSTOM_COMMAND_CLOSE_PLAYER -> {
+                        closeNotificationPlayer()
+                    }
                     MusicNotificationProvider.CUSTOM_COMMAND_COUNTED_PLAY -> {
                         val count = args.getInt("count", 1)
                         startCountedPlay(count)
@@ -1206,21 +1212,17 @@ class MusicService : MediaLibraryService() {
         val allowBackground = keepPlayingInBackground
 
         if (!allowBackground) {
-            player?.apply {
-                playWhenReady = false
-                stop()
-                clearMediaItems()
-            }
-            schedulePlaybackSnapshotPersist(immediate = true)
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            super.onTaskRemoved(rootIntent)
+            stopPlaybackAndUnload(
+                reason = "task_removed_background_disabled"
+            )
             return
         }
 
         if (player == null || !player.playWhenReady || player.mediaItemCount == 0 || player.playbackState == Player.STATE_ENDED) {
-            schedulePlaybackSnapshotPersist(immediate = true)
-            stopSelf()
+            stopPlaybackAndUnload(
+                reason = "task_removed_not_playing"
+            )
+            return
         }
         super.onTaskRemoved(rootIntent)
     }
@@ -1886,9 +1888,9 @@ class MusicService : MediaLibraryService() {
     private fun loadArtworkBytesForWidget(uri: Uri): ByteArray? {
         val scheme = uri.scheme?.lowercase()
         return when (scheme) {
-            "content", "file", "android.resource" -> {
+            "content", "file", "android.resource", com.theveloper.pixelplay.utils.LocalArtworkUri.SCHEME -> {
                 runCatching {
-                    applicationContext.contentResolver.openInputStream(uri)?.use { input ->
+                    AlbumArtUtils.openArtworkInputStream(applicationContext, uri)?.use { input ->
                         readBytesCapped(input, MAX_WIDGET_ARTWORK_BYTES)
                     }
                 }.getOrElse { error ->
@@ -2032,6 +2034,50 @@ class MusicService : MediaLibraryService() {
         // Media3's shouldRunInForeground logic and can remove foreground status, leading to
         // ForegroundServiceStartNotAllowedException when async callbacks fire later.
         session.setMediaButtonPreferences(buttons)
+    }
+
+    private fun closeNotificationPlayer() {
+        stopPlaybackAndUnload(
+            reason = "notification_close_button"
+        )
+    }
+
+    private fun stopPlaybackAndUnload(
+        reason: String,
+    ) {
+        Timber.tag(TAG).d(
+            "Stopping playback and unloading service. reason=%s",
+            reason
+        )
+        followUpMediaSessionUiRefreshJob?.cancel()
+        followUpWidgetUpdateJob?.cancel()
+        debouncedWidgetUpdateJob?.cancel()
+        playbackSnapshotPersistJob?.cancel()
+
+        val sessionToRelease = mediaSession
+        val player = sessionToRelease?.player ?: engine.masterPlayer
+
+        clearHeadsetReconnectResume()
+        cancelDurationSleepTimerInternal()
+        endOfTrackTimerSongId = null
+
+        persistPlaybackSnapshotImmediately()
+
+        player.playWhenReady = false
+        player.stop()
+        player.clearMediaItems()
+
+        requestWidgetFullUpdate(force = true)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+
+        stopSelf()
+    }
+
+    private fun persistPlaybackSnapshotImmediately() {
+        playbackSnapshotPersistJob?.cancel()
+        playbackSnapshotPersistJob = serviceScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            persistPlaybackSnapshot()
+        }
     }
 
     private fun refreshMediaSessionUiWithFollowUp(
@@ -2275,12 +2321,19 @@ class MusicService : MediaLibraryService() {
             .setSlots(CommandButton.SLOT_OVERFLOW)
             .build()
 
+        val closeButton = CommandButton.Builder(CommandButton.ICON_UNDEFINED)
+            .setCustomIconResId(R.drawable.rounded_close_24)
+            .setDisplayName(getString(R.string.close_notification_player))
+            .setSessionCommand(SessionCommand(MusicNotificationProvider.CUSTOM_COMMAND_CLOSE_PLAYER, Bundle.EMPTY))
+            .setSlots(CommandButton.SLOT_OVERFLOW)
+            .build()
+
         // Let Media3 provide the primary previous/play-next transport buttons from player
         // commands instead of advertising custom back/forward slots here. When custom
         // SLOT_BACK/SLOT_FORWARD buttons are present, Media3 strips the legacy
         // ACTION_SKIP_TO_PREVIOUS/NEXT flags from PlaybackStateCompat, which causes some
         // OEM compact system players (including ColorOS Control Center) to gray out skip.
-        return listOf(likeButton, shuffleButton, repeatButton)
+        return listOf(likeButton, closeButton, shuffleButton, repeatButton)
     }
 
     // ------------------------

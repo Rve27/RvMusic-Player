@@ -367,7 +367,10 @@ class DualPlayerEngine @Inject constructor(
                     .build()
             )
             setHandleAudioBecomingNoisy(true) // Force player to pause automatically when audio is rerouted from a headset to device speakers
-            setWakeMode(C.WAKE_MODE_LOCAL) // Use CPU lock only. WiFi lock unused as we proxy via localhost. Saves battery.
+            // Cloud sources are proxied through localhost, but the proxy still depends on
+            // upstream network access. Keep both CPU and network awake so background
+            // playback does not stall when the screen turns off or the app is backgrounded.
+            setWakeMode(C.WAKE_MODE_NETWORK)
             // Explicitly keep both players live so they can overlap without affecting each other
             playWhenReady = false
         }

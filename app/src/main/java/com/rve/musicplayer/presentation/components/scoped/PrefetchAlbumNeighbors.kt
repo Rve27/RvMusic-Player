@@ -8,6 +8,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
 import coil.size.Size
 import com.rve.musicplayer.data.model.Song
+import com.rve.musicplayer.utils.LocalArtworkUri
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -27,10 +28,12 @@ fun PrefetchAlbumNeighborsImg(
         for (i in bounds) {
             if (i == index) continue
             queue[i].albumArtUriString?.let { data ->
+                val diskPolicy = if (LocalArtworkUri.isLocalArtworkUri(data)) CachePolicy.DISABLED else CachePolicy.ENABLED
                 val req = coil.request.ImageRequest.Builder(context)
                     .data(data)
                     .memoryCacheKey("album:$data")
-                    .diskCacheKey("album:$data")
+                    .diskCacheKey(if (diskPolicy == CachePolicy.DISABLED) null else "album:$data")
+                    .diskCachePolicy(diskPolicy)
                     .size(coil.size.Size.ORIGINAL)
                     .build()
                 loader.enqueue(req)
@@ -60,11 +63,12 @@ fun PrefetchAlbumNeighbors(
                     .filter { it in queue.indices && it != page }
                 indices.forEach { idx ->
                     queue[idx].albumArtUriString?.let { uri ->
+                        val diskPolicy = if (LocalArtworkUri.isLocalArtworkUri(uri)) coil.request.CachePolicy.DISABLED else coil.request.CachePolicy.ENABLED
                         val req = coil.request.ImageRequest.Builder(context)
                             .data(uri)
                             .size(targetSize)
                             .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-                            .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                            .diskCachePolicy(diskPolicy)
                             .networkCachePolicy(coil.request.CachePolicy.ENABLED)
                             .allowHardware(true)
                             .build()

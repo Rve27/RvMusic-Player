@@ -7,6 +7,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.rve.musicplayer.data.model.ArtistRef
 import com.rve.musicplayer.data.model.Song
+import com.rve.musicplayer.utils.LocalArtworkUri
 import com.rve.musicplayer.utils.normalizeMetadataText
 import com.rve.musicplayer.utils.normalizeMetadataTextOrEmpty
 
@@ -78,7 +79,11 @@ private fun SongEntity.toSongInternal(artists: List<ArtistRef>): Song {
         albumArtist = this.albumArtist?.normalizeMetadataText(),
         path = this.filePath, // Map the file path
         contentUriString = this.contentUriString,
-        albumArtUriString = this.albumArtUriString,
+        albumArtUriString = LocalArtworkUri.resolveSongArtworkUri(
+            storedUri = this.albumArtUriString,
+            songId = this.id,
+            contentUriString = this.contentUriString
+        ),
         duration = this.duration,
         genre = this.genre.normalizeMetadataText(),
         lyrics = this.lyrics?.normalizeMetadataText(),

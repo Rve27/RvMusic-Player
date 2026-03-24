@@ -47,6 +47,9 @@ class PixelPlayApplication : Application(), ImageLoaderFactory, Configuration.Pr
     @Inject
     lateinit var navidromeCoilFetcherFactory: dagger.Lazy<com.rve.musicplayer.data.image.NavidromeCoilFetcher.Factory>
 
+    @Inject
+    lateinit var localArtworkCoilFetcherFactory: dagger.Lazy<com.theveloper.pixelplay.data.image.LocalArtworkCoilFetcher.Factory>
+
     // AÑADE EL COMPANION OBJECT
     companion object {
         const val NOTIFICATION_CHANNEL_ID = "pixelplay_music_channel"
@@ -109,6 +112,7 @@ class PixelPlayApplication : Application(), ImageLoaderFactory, Configuration.Pr
     override fun newImageLoader(): ImageLoader {
         return imageLoader.get().newBuilder()
             .components {
+                add(localArtworkCoilFetcherFactory.get())
                 add(telegramCoilFetcherFactory.get())
                 add(navidromeCoilFetcherFactory.get())
             }

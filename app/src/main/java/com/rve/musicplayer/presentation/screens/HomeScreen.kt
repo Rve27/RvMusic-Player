@@ -256,7 +256,8 @@ fun HomeScreen(
                             if (yourMixSongs.isNotEmpty()) {
                                 playerViewModel.playSongsShuffled(
                                     songsToPlay = yourMixSongs,
-                                    queueName = "Your Mix"
+                                    queueName = "Your Mix",
+                                    startAtZero = true,
                                 )
                             }
                         }

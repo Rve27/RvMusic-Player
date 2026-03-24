@@ -12,6 +12,8 @@ import com.kyant.taglib.Picture
 import com.kyant.taglib.TagLib
 import com.rve.musicplayer.data.database.MusicDao
 import com.rve.musicplayer.data.database.TelegramDao // Added
+import com.rve.musicplayer.data.database.TelegramSongEntity // Added
+import com.rve.musicplayer.utils.LocalArtworkUri
 import kotlinx.coroutines.flow.first // Added
 import kotlinx.coroutines.runBlocking
 import org.gagravarr.opus.OpusFile
@@ -244,8 +246,8 @@ class SongMetadataEditor(
                     newTrackNumber
                 )
 
-                coverArtUpdate?.let { update ->
-                    storedCoverArtUri = saveCoverArtPreview(songId, update)
+                coverArtUpdate?.let {
+                    storedCoverArtUri = LocalArtworkUri.buildSongUri(songId)
                     storedCoverArtUri?.let { coverUri ->
                         musicDao.updateSongAlbumArt(songId, coverUri)
                     }

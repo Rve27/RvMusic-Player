@@ -1,6 +1,7 @@
 package com.rve.musicplayer.presentation.components
 
 import android.graphics.Bitmap
+import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -27,6 +28,7 @@ import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.size.Size
 import com.rve.musicplayer.R
+import com.rve.musicplayer.utils.LocalArtworkUri
 
 @OptIn(ExperimentalCoilApi::class, ExperimentalComposeUiApi::class)
 @Composable
@@ -38,6 +40,18 @@ fun OptimizedAlbumArt(
     placeholderModel: Any? = null
 ) {
     val context = LocalContext.current
+    val isStableLocalArtwork = remember(uri) {
+        when (uri) {
+            is String -> LocalArtworkUri.isLocalArtworkUri(uri)
+            is Uri -> uri.scheme == LocalArtworkUri.SCHEME
+            is ImageRequest -> {
+                val data = uri.data
+                (data as? String)?.let(LocalArtworkUri::isLocalArtworkUri) == true ||
+                    (data as? Uri)?.scheme == LocalArtworkUri.SCHEME
+            }
+            else -> false
+        }
+    }
 
     if (renderDirectAlbumArt(
             model = uri,
@@ -58,7 +72,7 @@ fun OptimizedAlbumArt(
                 .error(R.drawable.ic_music_placeholder)
                 .size(targetSize)
                 .memoryCachePolicy(CachePolicy.ENABLED)
-                .diskCachePolicy(CachePolicy.ENABLED)
+                .diskCachePolicy(if (isStableLocalArtwork) CachePolicy.DISABLED else CachePolicy.ENABLED)
                 .build()
         }
     }

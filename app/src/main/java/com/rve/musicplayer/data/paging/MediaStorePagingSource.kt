@@ -129,7 +129,12 @@ class MediaStorePagingSource(
                 val id = cursor.getLong(idCol)
                 val albumId = cursor.getLong(albumIdCol)
                 val path = cursor.getString(pathCol)
-                val albumArtUriString = AlbumArtUtils.getCachedAlbumArtUri(context, id)?.toString()
+                val albumArtUriString = AlbumArtUtils.getAlbumArtUri(
+                    appContext = context,
+                    path = path,
+                    songId = id,
+                    forceRefresh = false
+                )
 
                 val song = Song(
                     id = id.toString(),
