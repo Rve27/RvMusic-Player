@@ -50,6 +50,7 @@ object LyricsUtils {
     private val LRC_WORD_TAG_REGEX = Regex("<\\d{2}:\\d{2}[.:]\\d{2,3}>")
     private val LRC_WORD_SPLIT_REGEX = Regex("(?=<\\d{2}:\\d{2}[.:]\\d{2,3}>)")
     private val LRC_TIMESTAMP_TAG_REGEX = Regex("\\[\\d{1,2}:\\d{2}(?:[.:]\\d{1,3})?]")
+    private val TRANSLATION_CREDIT_REGEX = Regex("^\\s*by\\s*[:：].+", RegexOption.IGNORE_CASE)
 
     /**
      * Parsea un String que contiene una letra en formato LRC o texto plano.
@@ -178,8 +179,16 @@ object LyricsUtils {
             val current = lines[i]
             val next = lines.getOrNull(i + 1)
             if (next != null && next.time == current.time && current.translation == null && current.line.isNotBlank() && next.line.isNotBlank()) {
-                result.add(current.copy(translation = next.line))
-                i += 2 // skip the translation line
+                val translationParts = mutableListOf(next.line)
+                var consumed = 2
+                while (true) {
+                    val trailing = lines.getOrNull(i + consumed) ?: break
+                    if (trailing.time != current.time || !isTranslationCreditLine(trailing.line)) break
+                    translationParts.add(trailing.line)
+                    consumed++
+                }
+                result.add(current.copy(translation = translationParts.joinToString("\n")))
+                i += consumed
             } else {
                 result.add(current)
                 i++
@@ -192,6 +201,11 @@ object LyricsUtils {
         if (value.isEmpty()) return value
         val withoutTags = LRC_TIMESTAMP_TAG_REGEX.replace(value, "")
         return withoutTags.trimStart()
+    }
+
+    internal fun isTranslationCreditLine(line: String): Boolean {
+        val normalized = stripLrcTimestamps(line).trim()
+        return normalized.isNotEmpty() && TRANSLATION_CREDIT_REGEX.matches(normalized)
     }
 
     /**
@@ -210,7 +224,12 @@ object LyricsUtils {
             buildList {
                 add("$timestamp${line.line}")
                 if (!line.translation.isNullOrBlank()) {
-                    add("$timestamp${line.translation}")
+                    line.translation
+                        .lines()
+                        .filter { it.isNotBlank() }
+                        .forEach { translationLine ->
+                            add("$timestamp$translationLine")
+                        }
                 }
             }
         }.joinToString("\n")

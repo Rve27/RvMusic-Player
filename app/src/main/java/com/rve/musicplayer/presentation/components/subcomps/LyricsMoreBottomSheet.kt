@@ -16,9 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.FormatAlignLeft
 import androidx.compose.material.icons.automirrored.rounded.FormatAlignRight
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.FormatAlignCenter
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -60,6 +61,9 @@ fun LyricsMoreBottomSheet(
     onSetImmersiveTemporarilyDisabled: (Boolean) -> Unit,
     lyricsAlignment: String,
     onLyricsAlignmentChange: (String) -> Unit,
+    hasTranslatedLyrics: Boolean,
+    showTranslation: Boolean,
+    onShowTranslationChange: (Boolean) -> Unit,
     // BottomToggleRow params
     isShuffleEnabled: Boolean,
     repeatMode: Int,
@@ -279,6 +283,40 @@ fun LyricsMoreBottomSheet(
                             leadingIconColor = contentColor
                         )
                     )
+
+                    if (hasTranslatedLyrics) {
+                        ListItem(
+                            headlineContent = { Text("Show Translations") },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Translate,
+                                    contentDescription = null
+                                )
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = showTranslation,
+                                    onCheckedChange = onShowTranslationChange,
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = onAccentColor,
+                                        checkedTrackColor = accentColor,
+                                        uncheckedThumbColor = contentColor,
+                                        uncheckedTrackColor = contentColor.copy(alpha = 0.3f)
+                                    )
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(itemBackgroundColor)
+                                .clickable { onShowTranslationChange(!showTranslation) },
+                            colors = ListItemDefaults.colors(
+                                containerColor = Color.Transparent,
+                                headlineColor = contentColor,
+                                leadingIconColor = contentColor
+                            )
+                        )
+                    }
 
                     // Immersive Mode Toggle
                     ListItem(

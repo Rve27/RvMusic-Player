@@ -2,11 +2,14 @@ package com.rve.musicplayer.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rve.musicplayer.data.database.MusicDao
 import com.rve.musicplayer.data.model.Song
 import com.rve.musicplayer.data.service.wear.PhoneWatchTransferState
 import com.rve.musicplayer.data.service.wear.PhoneWatchTransferStateStore
 import com.rve.musicplayer.data.service.wear.WearPhoneTransferSender
 import com.rve.musicplayer.shared.WearTransferProgress
+import com.rve.musicplayer.utils.AudioMeta
+import com.rve.musicplayer.utils.AudioMetaUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import javax.inject.Inject
@@ -24,8 +27,10 @@ import kotlinx.coroutines.launch
 class SongInfoBottomSheetViewModel @Inject constructor(
     private val wearPhoneTransferSender: WearPhoneTransferSender,
     private val transferStateStore: PhoneWatchTransferStateStore,
+    private val musicDao: MusicDao,
 ) : ViewModel() {
 
+    private val _audioMeta = MutableStateFlow<AudioMeta?>(null)
     private val _isPixelPlayWatchAvailable = MutableStateFlow(false)
     val isPixelPlayWatchAvailable: StateFlow<Boolean> = _isPixelPlayWatchAvailable.asStateFlow()
     private val _isWatchAvailabilityResolved = MutableStateFlow(false)
@@ -59,6 +64,20 @@ class SongInfoBottomSheetViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000L),
         initialValue = false,
     )
+
+    val audioMeta: StateFlow<AudioMeta?> = _audioMeta.asStateFlow()
+
+    fun loadAudioMeta(song: Song) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val meta = AudioMetaUtils.getAudioMetadata(
+                musicDao = musicDao,
+                id = song.id.toLongOrNull() ?: -1L,
+                filePath = song.path,
+                deepScan = false
+            )
+            _audioMeta.value = meta
+        }
+    }
 
     fun refreshWatchAvailability() {
         if (_isRefreshingWatchAvailability.value) return

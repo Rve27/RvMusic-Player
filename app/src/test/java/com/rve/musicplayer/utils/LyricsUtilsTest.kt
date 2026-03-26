@@ -237,6 +237,20 @@ class LyricsUtilsTest {
     }
 
     @Test
+    fun parseLyrics_translationCreditAtSameTimestamp_isGroupedIntoTranslation() {
+        val lrc = "[00:10.00]Hello world\n[00:10.00]你好世界\n[00:10.00]by: translator\n[00:20.00]Goodbye"
+
+        val lyrics = LyricsUtils.parseLyrics(lrc)
+        val synced = requireNotNull(lyrics.synced)
+
+        assertEquals(2, synced.size)
+        assertEquals("Hello world", synced[0].line)
+        assertEquals("你好世界\nby: translator", synced[0].translation)
+        assertEquals("Goodbye", synced[1].line)
+        assertNull(synced[1].translation)
+    }
+
+    @Test
     fun parseLyrics_nonTimestampedLinePreservedAsMerge_notTranslation() {
         // Non-timestamped lines after a synced line are merged into line text (existing behavior)
         val lrc = "[00:10.00]Hello world\ncontinuation line\n[00:20.00]Next"
@@ -306,6 +320,24 @@ class LyricsUtilsTest {
 
         assertEquals(
             "[00:10.00]Hello world\n[00:10.00]你好世界\n[00:20.00]Goodbye",
+            lrc
+        )
+    }
+
+    @Test
+    fun syncedToLrcString_expandsMultilineTranslationWithTimestampPerLine() {
+        val lrc = LyricsUtils.syncedToLrcString(
+            listOf(
+                com.theveloper.pixelplay.data.model.SyncedLine(
+                    time = 10_000,
+                    line = "Hello world",
+                    translation = "你好世界\nby: translator"
+                )
+            )
+        )
+
+        assertEquals(
+            "[00:10.00]Hello world\n[00:10.00]你好世界\n[00:10.00]by: translator",
             lrc
         )
     }

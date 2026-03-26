@@ -223,8 +223,8 @@ constructor(
                                     musicDao.getAllAlbumsList(emptyList(), false)
                                 }
 
-                        val existingArtistImageUrls =
-                                allExistingArtists.associate { it.id to it.imageUrl }
+                        val existingArtistMetadata =
+                                allExistingArtists.associate { it.id to (it.imageUrl to it.customImageUri) }
                         
                         // Load all existing artist IDs to ensure stability across incremental syncs
                         val existingArtistIdMap = allExistingArtists.associate { it.name to it.id }.toMutableMap()
@@ -238,7 +238,7 @@ constructor(
                                         songs = songsToInsert,
                                         artistDelimiters = artistDelimiters,
                                         groupByAlbumArtist = groupByAlbumArtist,
-                                        existingArtistImageUrls = existingArtistImageUrls,
+                                        existingArtistMetadata = existingArtistMetadata,
                                         existingAlbums = allExistingAlbums,
                                         existingArtistIdMap = existingArtistIdMap,
                                         initialMaxArtistId = maxArtistId
@@ -401,7 +401,7 @@ constructor(
             songs: List<SongEntity>,
             artistDelimiters: List<String>,
             groupByAlbumArtist: Boolean,
-            existingArtistImageUrls: Map<Long, String?>,
+            existingArtistMetadata: Map<Long, Pair<String?, String?>>,
             existingAlbums: List<AlbumEntity>,
             existingArtistIdMap: MutableMap<String, Long>,
             initialMaxArtistId: Long
@@ -479,11 +479,13 @@ constructor(
         // Build Entities
         val artistEntities = artistNameToId.map { (name, id) ->
             val count = artistTrackCounts[id] ?: 0
+            val metadata = existingArtistMetadata[id]
             ArtistEntity(
                 id = id,
                 name = name,
                 trackCount = count,
-                imageUrl = existingArtistImageUrls[id]
+                imageUrl = metadata?.first,
+                customImageUri = metadata?.second
             )
         }
         

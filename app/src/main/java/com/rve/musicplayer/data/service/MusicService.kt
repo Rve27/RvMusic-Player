@@ -812,11 +812,20 @@ class MusicService : MediaLibraryService() {
         }
     }
 
+    private fun isServiceAlreadyForeground(): Boolean {
+        val player = mediaSession?.player ?: return false
+        return player.playWhenReady &&
+            player.playbackState != Player.STATE_IDLE &&
+            player.playbackState != Player.STATE_ENDED
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val forcedForegroundStart =
             intent?.getBooleanExtra(EXTRA_FORCE_FOREGROUND_ON_START, false) == true
         val isMediaButtonIntent = intent?.action == Intent.ACTION_MEDIA_BUTTON
-        if (forcedForegroundStart || isMediaButtonIntent) {
+        val needsTemporaryForeground = forcedForegroundStart ||
+            (isMediaButtonIntent && !isServiceAlreadyForeground())
+        if (needsTemporaryForeground) {
             startTemporaryForegroundForCommand()
         }
 
@@ -881,7 +890,7 @@ class MusicService : MediaLibraryService() {
             }
         }
         val startCommandResult = super.onStartCommand(intent, flags, startId)
-        if (forcedForegroundStart || isMediaButtonIntent) {
+        if (needsTemporaryForeground) {
             val player = mediaSession?.player
             val isActivelyPlaying = player?.let {
                 it.playWhenReady &&
