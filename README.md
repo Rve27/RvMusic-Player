@@ -16,6 +16,8 @@ RvMusic Player is a fork of [PixelPlayer](https://github.com/theovilardo/PixelPl
   <img src="assets/screenshot2.jpg" alt="Screenshot 2" width="200" style="border-radius:26px;"/>
   <img src="assets/screenshot3.jpg" alt="Screenshot 3" width="200" style="border-radius:26px;"/>
   <img src="assets/screenshot4.jpg" alt="Screenshot 4" width="200" style="border-radius:26px;"/>
+  <img src="assets/screenshot5.jpg" alt="Screenshot 3" width="200" style="border-radius:26px;"/>
+  <img src="assets/screenshot6.jpg" alt="Screenshot 4" width="200" style="border-radius:26px;"/>
 </p>
 
 <p align="center">
