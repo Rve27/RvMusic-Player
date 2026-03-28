@@ -72,9 +72,9 @@ fun AppNavigation(
 ) {
     var startDestination by remember { mutableStateOf<String?>(null) }
 
-    val spatialSpecIntOffset = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
-    val spatialSpecFloat = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
-    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val spatialSpecIntOffset = MaterialTheme.motionScheme.slowSpatialSpec<IntOffset>()
+    val spatialSpecFloat = MaterialTheme.motionScheme.slowSpatialSpec<Float>()
+    val effectsSpec = MaterialTheme.motionScheme.slowEffectsSpec<Float>()
 
     LaunchedEffect(Unit) {
         startDestination = userPreferencesRepository.launchTabFlow
