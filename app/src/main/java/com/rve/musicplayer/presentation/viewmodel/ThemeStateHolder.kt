@@ -160,9 +160,15 @@ class ThemeStateHolder @Inject constructor(
     }
 
     suspend fun forceRegenerateColorScheme(
-        uriString: String,
+        uriString: String?,
         regenerateAllStyles: Boolean = false
     ) {
+         if (uriString == null) {
+             _currentAlbumArtColorSchemePair.value = null
+             _currentAlbumArtUri.value = null
+             return
+         }
+
          android.util.Log.d("ThemeStateHolder", "forceRegenerateColorScheme called for: $uriString")
          android.util.Log.d("ThemeStateHolder", "Current tracked global URI: ${_currentAlbumArtUri.value}")
          

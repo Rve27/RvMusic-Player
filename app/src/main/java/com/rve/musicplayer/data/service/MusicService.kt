@@ -958,6 +958,7 @@ class MusicService : MediaLibraryService() {
         }
 
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+            requestWidgetFullUpdate(force = true)
             schedulePlaybackSnapshotPersist(immediate = timeline.isEmpty)
         }
 
@@ -1657,6 +1658,7 @@ class MusicService : MediaLibraryService() {
         if (old.isPlaying != new.isPlaying) return true
         if (old.albumArtUri != new.albumArtUri) return true
         if (old.isFavorite != new.isFavorite) return true
+        if (old.queue != new.queue) return true
         if (old.themeColors != new.themeColors) return true
         if (old.isShuffleEnabled != new.isShuffleEnabled) return true
         if (old.repeatMode != new.repeatMode) return true
@@ -1667,17 +1669,87 @@ class MusicService : MediaLibraryService() {
         return drift > 3000L
     }
 
+    private fun shouldPublishWearState(old: PlayerInfo, new: PlayerInfo): Boolean {
+        return shouldUpdateWidget(old, new) || old.wearQueueRevision != new.wearQueueRevision
+    }
+
     private suspend fun processWidgetUpdateInternal() {
         val playerInfo = buildPlayerInfo()
         val oldInfo = lastWidgetPlayerInfo
-        
-        if (oldInfo == null || shouldUpdateWidget(oldInfo, playerInfo)) {
+
+        val shouldUpdateWidgets = oldInfo == null || shouldUpdateWidget(oldInfo, playerInfo)
+        val shouldPublishWear = oldInfo == null || shouldPublishWearState(oldInfo, playerInfo)
+
+        if (shouldUpdateWidgets || shouldPublishWear) {
             lastWidgetPlayerInfo = playerInfo
-            val currentMediaId = resolveCurrentMediaIdForWear()
+        }
+
+        if (shouldUpdateWidgets) {
             updateGlanceWidgets(playerInfo)
+        }
+
+        if (shouldPublishWear) {
+            val currentMediaId = resolveCurrentMediaIdForWear()
             // Publish state to Wear OS watch
             wearStatePublisher.publishState(currentMediaId, playerInfo)
         }
+    }
+
+    private fun buildWearQueueRevision(
+        timeline: Timeline,
+        currentIndex: Int,
+        currentMediaId: String?,
+    ): String {
+        val remoteClient = observedCastSession?.remoteMediaClient
+            ?: castSessionManager?.currentCastSession?.remoteMediaClient
+        val remoteStatus = remoteClient?.mediaStatus
+        val remoteQueueItems = remoteStatus?.queueItems.orEmpty()
+        if (remoteQueueItems.isNotEmpty()) {
+            val remoteCurrentIndex = remoteQueueItems.indexOfFirst {
+                it.itemId == remoteStatus?.getCurrentItemId()
+            }.takeIf { it >= 0 } ?: 0
+            val remoteTokens = remoteQueueItems.map { item ->
+                item.customData
+                    ?.optString("songId")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: item.media?.contentId
+                    ?: item.itemId.toString()
+            }
+            return encodeWearQueueRevision(remoteTokens, remoteCurrentIndex)
+        }
+
+        if (timeline.isEmpty) {
+            return currentMediaId.orEmpty()
+        }
+
+        val window = Timeline.Window()
+        val tokens = buildList(timeline.windowCount) {
+            for (index in 0 until timeline.windowCount) {
+                timeline.getWindow(index, window)
+                val mediaItem = window.mediaItem
+                add(
+                    mediaItem.mediaId.ifBlank {
+                        mediaItem.localConfiguration?.uri?.toString()
+                            ?: mediaItem.mediaMetadata.title?.toString()
+                            ?: index.toString()
+                    }
+                )
+            }
+        }
+        val safeCurrentIndex = currentIndex.coerceIn(0, (timeline.windowCount - 1).coerceAtLeast(0))
+        return encodeWearQueueRevision(tokens, safeCurrentIndex)
+    }
+
+    private fun encodeWearQueueRevision(queueTokens: List<String>, currentIndex: Int): String {
+        if (queueTokens.isEmpty()) return ""
+        return buildString {
+            append(currentIndex)
+            append('|')
+            queueTokens.forEachIndexed { index, token ->
+                if (index > 0) append(',')
+                append(token)
+            }
+        }.hashCode().toString()
     }
 
     private suspend fun buildPlayerInfo(): PlayerInfo {
@@ -1792,6 +1864,11 @@ class MusicService : MediaLibraryService() {
         val wearThemePalette = schemePair?.let { buildWearThemePalette(it.dark) }
 
         val isFavorite = isSongFavorite(mediaId)
+        val wearQueueRevision = buildWearQueueRevision(
+            timeline = snapshotTimeline,
+            currentIndex = snapshotWindowIndex,
+            currentMediaId = mediaId,
+        )
 
         val queueItems = mutableListOf<com.rve.musicplayer.data.model.QueueItem>()
         // Reuse snapshotTimeline / snapshotWindowIndex captured at the top — no extra main-thread hop
@@ -1833,6 +1910,7 @@ class MusicService : MediaLibraryService() {
             isShuffleEnabled = shuffleEnabled,
             repeatMode = repeatMode,
             wearThemePalette = wearThemePalette,
+            wearQueueRevision = wearQueueRevision,
         )
     }
 

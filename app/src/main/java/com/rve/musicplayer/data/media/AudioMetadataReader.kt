@@ -19,6 +19,7 @@ data class AudioMetadata(
     val lyrics: String?,
     val durationMs: Long?,
     val trackNumber: Int?,
+    val discNumber: Int?,
     val year: Int?,
     val bitrate: Int?,
     val sampleRate: Int?,
@@ -79,6 +80,9 @@ object AudioMetadataReader {
                 val trackString = propertyMap["TRACKNUMBER"]?.firstOrNull()?.takeIf { it.isNotBlank() }
                     ?: propertyMap["TRACK"]?.firstOrNull()?.takeIf { it.isNotBlank() }
                 val trackNumber = trackString?.substringBefore('/')?.toIntOrNull()
+                val discString = propertyMap["DISCNUMBER"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+                    ?: propertyMap["DISC"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+                val discNumber = discString?.substringBefore('/')?.toIntOrNull()
                 val year = propertyMap["DATE"]?.firstOrNull()?.takeIf { it.isNotBlank() }?.take(4)?.toIntOrNull()
                     ?: propertyMap["YEAR"]?.firstOrNull()?.takeIf { it.isNotBlank() }?.toIntOrNull()
 
@@ -99,9 +103,10 @@ object AudioMetadataReader {
                     null
                 }
 
-                // Fallback: if TagLib couldn't read title OR artist, try JAudioTagger.
-                // This handles files with non-standard ID3 frames (e.g. 48kHz MP3s from ffmpeg).
-                val fallback = if (title == null || artist == null) {
+                // Fallback: TagLib sometimes parses core tags but misses APIC/other ID3 frames
+                // on some MP3s. If essential fields or requested artwork are missing, try
+                // JAudioTagger before giving up so we preserve full metadata when possible.
+                val fallback = if (title == null || artist == null || (readArtwork && artwork == null)) {
                     Log.w(TAG, "TagLib incomplete for ${file.name}, trying JAudioTagger fallback...")
                     readWithJAudioTagger(file)
                 } else null
@@ -115,6 +120,7 @@ object AudioMetadataReader {
                     lyrics = lyrics ?: fallback?.lyrics,
                     durationMs = durationMs ?: fallback?.durationMs,
                     trackNumber = trackNumber ?: fallback?.trackNumber,
+                    discNumber = discNumber ?: fallback?.discNumber,
                     year = year ?: fallback?.year,
                     bitrate = bitrate ?: fallback?.bitrate,
                     sampleRate = sampleRate ?: fallback?.sampleRate,
@@ -129,7 +135,7 @@ object AudioMetadataReader {
 
     /**
      * Fallback reader using JAudioTagger for files where TagLib can't map ID3 frames.
-     * Only called when TagLib fails to read both title and artist.
+     * Called when TagLib leaves key metadata or requested artwork unresolved.
      */
     private fun readWithJAudioTagger(file: File): AudioMetadata? {
         return try {
@@ -150,6 +156,8 @@ object AudioMetadataReader {
             val genre = tag?.getFirst(FieldKey.GENRE)?.takeIf { it.isNotBlank() }
             val lyrics = tag?.getFirst(FieldKey.LYRICS)?.takeIf { it.isNotBlank() }
             val trackNumber = tag?.getFirst(FieldKey.TRACK)?.takeIf { it.isNotBlank() }
+                ?.substringBefore('/')?.toIntOrNull()
+            val discNumber = tag?.getFirst(FieldKey.DISC_NO)?.takeIf { it.isNotBlank() }
                 ?.substringBefore('/')?.toIntOrNull()
             val year = tag?.getFirst(FieldKey.YEAR)?.takeIf { it.isNotBlank() }
                 ?.take(4)?.toIntOrNull()
@@ -180,6 +188,7 @@ object AudioMetadataReader {
                 lyrics = lyrics,
                 durationMs = durationMs,
                 trackNumber = trackNumber,
+                discNumber = discNumber,
                 year = year,
                 bitrate = bitrate,
                 sampleRate = sampleRate,

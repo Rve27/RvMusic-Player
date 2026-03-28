@@ -81,8 +81,18 @@ fun SmartImage(
         ) ?: model
     }
 
-    if (model is ImageVector || model is Painter || model is ImageBitmap || model is Bitmap) {
-        // Already rendered inside handleDirectModel.
+    if (model == null || model is ImageVector || model is Painter || model is ImageBitmap || model is Bitmap) {
+        if (model == null) {
+            Placeholder(
+                modifier = clippedModifier,
+                drawableResId = placeholderResId,
+                contentDescription = contentDescription,
+                containerColor = placeHolderBackgroundColor,
+                iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                alpha = alpha
+            )
+        }
+        // Already rendered or null.
         return
     }
 

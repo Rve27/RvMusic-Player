@@ -84,6 +84,11 @@ fun MoreScreen(
             browseViewModel.loadItems(WearBrowseRequest.QUEUE)
         }
     }
+    LaunchedEffect(playerState.queueRevision, isPhoneConnected, isWatchOutputSelected) {
+        if (isPhoneConnected && !isWatchOutputSelected) {
+            browseViewModel.loadItems(WearBrowseRequest.QUEUE)
+        }
+    }
     LaunchedEffect(
         isWatchOutputSelected,
         isPhoneConnected,

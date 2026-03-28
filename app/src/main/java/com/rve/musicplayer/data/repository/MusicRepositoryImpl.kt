@@ -30,6 +30,8 @@ import com.rve.musicplayer.data.database.toArtist
 import com.rve.musicplayer.data.database.toSearchHistoryItem
 import com.rve.musicplayer.data.database.toSong
 import com.rve.musicplayer.data.database.toTelegramEntity
+import com.rve.musicplayer.data.database.toTelegramEntityWithThread
+import com.rve.musicplayer.data.database.TelegramTopicEntity
 import com.rve.musicplayer.data.model.Album
 import com.rve.musicplayer.data.model.Artist
 import com.rve.musicplayer.data.model.Genre
@@ -47,7 +49,11 @@ import com.rve.musicplayer.data.preferences.PlaylistPreferencesRepository
 import com.rve.musicplayer.data.preferences.UserPreferencesRepository
 import com.rve.musicplayer.utils.DirectoryFilterUtils
 import com.rve.musicplayer.utils.LogUtils
+import com.rve.musicplayer.utils.StorageType
+import com.rve.musicplayer.utils.StorageUtils
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
@@ -152,14 +158,14 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun saveTelegramSongs(songs: List<Song>) {
-         val entities = songs.mapNotNull { it.toTelegramEntity() }
-         if (entities.isNotEmpty()) {
-             telegramDao.insertSongs(entities)
-             // Trigger sync to update main DB
-             androidx.work.WorkManager.getInstance(context).enqueue(
-                 com.rve.musicplayer.data.worker.SyncWorker.incrementalSyncWork()
-             )
-         }
+        val entities = songs.mapNotNull { it.toTelegramEntity() }
+        if (entities.isNotEmpty()) {
+            telegramDao.insertSongs(entities)
+            // Trigger sync to update main DB
+            androidx.work.WorkManager.getInstance(context).enqueue(
+                com.rve.musicplayer.data.worker.SyncWorker.incrementalSyncWork()
+            )
+        }
     }
 
     override suspend fun replaceTelegramSongsForChannel(chatId: Long, songs: List<Song>) {
@@ -495,7 +501,7 @@ class MusicRepositoryImpl @Inject constructor(
                 telegramDao.getAllChannels()
             ) { songs, channels ->
                 val channelMap = channels.associateBy { it.chatId }
-                songs.firstOrNull()?.let { 
+                songs.firstOrNull()?.let {
                     it.toSong(channelTitle = channelMap[it.chatId]?.title)
                 }
             }.flowOn(Dispatchers.IO)
@@ -660,7 +666,7 @@ class MusicRepositoryImpl @Inject constructor(
         allChannels.forEach { channel ->
             telegramRepository.deleteAppPlaylistForTelegramChannel(channel.chatId)
         }
-        
+
         musicDao.clearAllTelegramSongs()
         telegramDao.clearAll()
         // Clear all Telegram caches (TDLib files, embedded art, memory)
@@ -670,18 +676,26 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun saveTelegramChannel(channel: TelegramChannelEntity) {
         telegramDao.insertChannel(channel)
-        
-        // Create or update the corresponding app playlist
+
+        // Create or update the corresponding app playlist.
+        // Forum channels use per-topic playlists (managed by replaceTelegramSongsForTopic),
+        // so we skip the flat channel-level playlist when topics exist.
         try {
-            val channelSongs = withContext(Dispatchers.IO) {
-                telegramDao.getSongsByChatId(channel.chatId)
+            val topics = withContext(Dispatchers.IO) {
+                telegramDao.getTopicsByChannelOnce(channel.chatId)
             }
-            
-            telegramRepository.updateAppPlaylistForTelegramChannel(
-                channel.chatId,
-                channel.title,
-                channelSongs
-            )
+            if (topics.isEmpty()) {
+                // Flat (non-forum) channel: create/update a single channel playlist
+                val channelSongs = withContext(Dispatchers.IO) {
+                    telegramDao.getSongsByChatId(channel.chatId)
+                }
+                telegramRepository.updateAppPlaylistForTelegramChannel(
+                    channel.chatId,
+                    channel.title,
+                    channelSongs
+                )
+            }
+            // Forum channels: topic playlists are managed by replaceTelegramSongsForTopic
         } catch (e: Exception) {
             Log.e("MusicRepo", "Failed to update app playlist for Telegram channel ${channel.chatId}", e)
         }
@@ -693,11 +707,69 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun deleteTelegramChannel(chatId: Long) {
         musicDao.clearTelegramSongsForChat(chatId)
-        telegramDao.deleteSongsByChatId(chatId) // Cascade delete songs
+        telegramDao.deleteSongsByChatId(chatId)
+        telegramDao.deleteTopicsByChannel(chatId)     // NEW: remove topics
         telegramDao.deleteChannel(chatId)
-        
-        // Delete corresponding app playlist
         telegramRepository.deleteAppPlaylistForTelegramChannel(chatId)
+        telegramRepository.deleteAllTopicPlaylistsForChannel(chatId)  // NEW: remove topic playlists
+    }
+
+    override suspend fun saveTelegramTopics(chatId: Long, topics: List<TelegramTopicEntity>) {
+        telegramDao.insertTopics(topics)
+    }
+
+    override suspend fun replaceTopicsForChannel(
+        chatId: Long,
+        freshTopics: List<TelegramTopicEntity>
+    ) {
+        val existingTopics = telegramDao.getTopicsByChannelOnce(chatId)
+        val freshThreadIds = freshTopics.map { it.threadId }.toSet()
+
+        // Delete topics that are no longer returned by Telegram
+        val removedTopics = existingTopics.filter { it.threadId !in freshThreadIds }
+        for (removed in removedTopics) {
+            // Delete their songs from the telegram_songs table
+            telegramDao.deleteSongsByTopicId(chatId, removed.threadId)
+            // Delete their songs from the main music DB
+            musicDao.clearTelegramSongsForTopic(chatId, removed.threadId)
+            // Delete their playlist from the app playlist store
+            telegramRepository.deleteAppPlaylistForTopic(chatId, removed.threadId)
+            // Delete the topic row itself
+            telegramDao.deleteTopic(removed.id)
+        }
+
+        // Insert/update the fresh topic list
+        if (freshTopics.isNotEmpty()) {
+            telegramDao.insertTopics(freshTopics)
+        }
+    }
+
+    override suspend fun getTopicsForChannel(chatId: Long): List<TelegramTopicEntity> {
+        return telegramDao.getTopicsByChannelOnce(chatId)
+    }
+
+    override suspend fun replaceTelegramSongsForTopic(
+        chatId: Long,
+        threadId: Long,
+        topicName: String,
+        songs: List<Song>
+    ) {
+        // Stamp each song entity with the threadId before inserting
+        val entities = songs.mapNotNull { it.toTelegramEntityWithThread(threadId) }
+            .filter { it.chatId == chatId }
+
+        telegramDao.deleteSongsByTopicId(chatId, threadId)
+        if (entities.isNotEmpty()) {
+            telegramDao.insertSongs(entities)
+        }
+
+        // Create/update the per-topic app playlist
+        telegramRepository.updateAppPlaylistForTopic(chatId, threadId, topicName, entities)
+
+        // Sync main music DB
+        androidx.work.WorkManager.getInstance(context).enqueue(
+            com.rve.musicplayer.data.worker.SyncWorker.incrementalSyncWork()
+        )
     }
 
     override suspend fun getSongIdsSorted(

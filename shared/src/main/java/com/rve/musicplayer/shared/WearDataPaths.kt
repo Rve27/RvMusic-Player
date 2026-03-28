@@ -17,7 +17,7 @@ object WearDataPaths {
     /** Message path for volume commands (watch -> phone) */
     const val VOLUME_COMMAND = "/volume_command"
 
-    /** Message path for current volume state (phone -> watch) */
+    /** Message path for volume state updates (phone -> watch) */
     const val VOLUME_STATE = "/volume_state"
 
     /** Key for the album art Asset within a DataItem */
@@ -35,6 +35,12 @@ object WearDataPaths {
     /** Message path for library browse responses (phone -> watch) */
     const val BROWSE_RESPONSE = "/browse_response"
 
+    /** Message path for watch library status queries */
+    const val WATCH_LIBRARY_QUERY = "/watch_library_query"
+
+    /** Message path for watch library state responses */
+    const val WATCH_LIBRARY_STATE = "/watch_library_state"
+
     /** Message path for transfer requests (watch -> phone) */
     const val TRANSFER_REQUEST = "/transfer_request"
 
@@ -44,7 +50,7 @@ object WearDataPaths {
     /** ChannelClient path for audio file streaming (phone -> watch) */
     const val TRANSFER_CHANNEL = "/transfer_audio"
 
-    /** ChannelClient path for artwork file streaming (phone -> watch) */
+    /** ChannelClient path for artwork streaming (phone -> watch) */
     const val TRANSFER_ARTWORK_CHANNEL = "/transfer_artwork"
 
     /** Message path for transfer progress updates (phone -> watch) */
@@ -53,15 +59,9 @@ object WearDataPaths {
     /** Message path for transfer cancellation (watch -> phone) */
     const val TRANSFER_CANCEL = "/transfer_cancel"
 
-    /** Message path to ask the watch for its current saved song IDs (phone -> watch). */
-    const val WATCH_LIBRARY_QUERY = "/watch_library_query"
-
-    /** Message path carrying the watch saved song IDs snapshot (watch -> phone). */
-    const val WATCH_LIBRARY_STATE = "/watch_library_state"
-
-    /** Message path for asking the phone to resolve favorite states for watch-local songs. */
+    /** Message path for favorites sync requests (watch -> phone) */
     const val FAVORITES_SYNC_REQUEST = "/favorites_sync_request"
 
-    /** Message path carrying favorite state snapshots back to the watch. */
+    /** Message path for favorites sync progress/state (phone -> watch) */
     const val FAVORITES_SYNC_STATE = "/favorites_sync_state"
 }

@@ -28,9 +28,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         QqMusicSongEntity::class,
         QqMusicPlaylistEntity::class,
         NavidromeSongEntity::class,
-        NavidromePlaylistEntity::class
+        NavidromePlaylistEntity::class,
+        TelegramTopicEntity::class
     ],
-    version = 30, // Fix Navidrome playlist_id affinity drift
+         version = 32, // Add Telegram forum topic support
 
     exportSchema = true
 )
@@ -86,7 +87,7 @@ abstract class PixelPlayDatabase : RoomDatabase() {
         val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE songs ADD COLUMN album_artist TEXT DEFAULT NULL")
-                
+
                 db.execSQL("""
                     CREATE TABLE IF NOT EXISTS song_artist_cross_ref (
                         song_id INTEGER NOT NULL,
@@ -97,11 +98,11 @@ abstract class PixelPlayDatabase : RoomDatabase() {
                         FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE
                     )
                 """.trimIndent())
-                
+
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_song_artist_cross_ref_song_id ON song_artist_cross_ref(song_id)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_song_artist_cross_ref_artist_id ON song_artist_cross_ref(artist_id)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_song_artist_cross_ref_is_primary ON song_artist_cross_ref(is_primary)")
-                
+
                 db.execSQL("""
                     INSERT OR REPLACE INTO song_artist_cross_ref (song_id, artist_id, is_primary)
                     SELECT id, artist_id, 1 FROM songs WHERE artist_id IS NOT NULL
@@ -154,7 +155,7 @@ abstract class PixelPlayDatabase : RoomDatabase() {
                 """.trimIndent())
             }
         }
-        
+
         val MIGRATION_15_16 = object : Migration(15, 16) {
              override fun migrate(db: SupportSQLiteDatabase) {
                 // Create song_engagements table for tracking play statistics
@@ -190,7 +191,7 @@ abstract class PixelPlayDatabase : RoomDatabase() {
 
                 val themePrefixes = listOf("light_", "dark_")
                 val columnDefinitions = StringBuilder()
-                
+
                 // Add standard columns
                 columnDefinitions.append("albumArtUriString TEXT NOT NULL, ")
                 columnDefinitions.append("paletteStyle TEXT NOT NULL, ")
@@ -208,7 +209,7 @@ abstract class PixelPlayDatabase : RoomDatabase() {
                 db.execSQL("CREATE TABLE IF NOT EXISTS album_art_themes ($columnsSql, PRIMARY KEY(albumArtUriString))")
             }
         }
-        
+
         val MIGRATION_16_17 = object : Migration(16, 17) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 try {
@@ -244,7 +245,7 @@ abstract class PixelPlayDatabase : RoomDatabase() {
 
                 val themePrefixes = listOf("light_", "dark_")
                 val columnDefinitions = StringBuilder()
-                
+
                 // Add standard columns
                 columnDefinitions.append("albumArtUriString TEXT NOT NULL, ")
                 columnDefinitions.append("paletteStyle TEXT NOT NULL, ")
@@ -272,7 +273,7 @@ abstract class PixelPlayDatabase : RoomDatabase() {
                         timestamp INTEGER NOT NULL
                     )
                 """.trimIndent())
-                
+
                 // Migrate existing favorites from songs table if possible
                 // Note: We need to cast is_favorite (boolean/int) to ensure compatibility
                 db.execSQL("""
@@ -577,6 +578,7 @@ abstract class PixelPlayDatabase : RoomDatabase() {
                         is_favorite INTEGER NOT NULL DEFAULT 0,
                         lyrics TEXT DEFAULT null,
                         track_number INTEGER NOT NULL DEFAULT 0,
+                        disc_number INTEGER DEFAULT null,
                         year INTEGER NOT NULL DEFAULT 0,
                         date_added INTEGER NOT NULL DEFAULT 0,
                         mime_type TEXT,
@@ -613,6 +615,7 @@ abstract class PixelPlayDatabase : RoomDatabase() {
                 val isFavoriteExpr = columnExpr(columns, "is_favorite", "0")
                 val lyricsExpr = columnExpr(columns, "lyrics", "NULL")
                 val trackNumberExpr = columnExpr(columns, "track_number", "0")
+                val discNumberExpr = columnExpr(columns, "disc_number", "NULL")
                 val yearExpr = columnExpr(columns, "year", "0")
                 val dateAddedExpr = columnExpr(columns, "date_added", "0")
                 val mimeTypeExpr = columnExpr(columns, "mime_type", "NULL")
@@ -640,6 +643,7 @@ abstract class PixelPlayDatabase : RoomDatabase() {
                             is_favorite,
                             lyrics,
                             track_number,
+                            disc_number,
                             year,
                             date_added,
                             mime_type,
@@ -665,6 +669,7 @@ abstract class PixelPlayDatabase : RoomDatabase() {
                             $isFavoriteExpr,
                             $lyricsExpr,
                             $trackNumberExpr,
+                            $discNumberExpr,
                             $yearExpr,
                             $dateAddedExpr,
                             $mimeTypeExpr,
@@ -854,6 +859,48 @@ abstract class PixelPlayDatabase : RoomDatabase() {
             return columns
         }
 
+        private fun getTableColumnDefaultValue(
+            db: SupportSQLiteDatabase,
+            tableName: String,
+            columnName: String
+        ): String? {
+            db.query("PRAGMA table_info(`$tableName`)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                val defaultValueIndex = cursor.getColumnIndex("dflt_value")
+                if (nameIndex == -1 || defaultValueIndex == -1) return null
+
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(nameIndex) == columnName) {
+                        return cursor.getString(defaultValueIndex)
+                    }
+                }
+            }
+            return null
+        }
+
+        private fun ensureSongsTableHasDiscNumber(db: SupportSQLiteDatabase) {
+            if (!tableExists(db, "songs")) {
+                recreateSongsTable(db)
+                return
+            }
+
+            val columns = getTableColumns(db, "songs")
+            if ("disc_number" !in columns) {
+                try {
+                    db.execSQL("ALTER TABLE songs ADD COLUMN disc_number INTEGER DEFAULT null")
+                } catch (_: Exception) {
+                    // Restored/drifted databases may already contain a partially applied column.
+                }
+            }
+
+            val refreshedColumns = getTableColumns(db, "songs")
+            val discNumberDefault = getTableColumnDefaultValue(db, "songs", "disc_number")
+
+            if ("disc_number" !in refreshedColumns || !discNumberDefault.equals("null", ignoreCase = true)) {
+                recreateSongsTable(db)
+            }
+        }
+
         private fun columnExpr(columns: Set<String>, columnName: String, fallbackExpr: String): String {
             return if (columnName in columns) {
                 "COALESCE($columnName, $fallbackExpr)"
@@ -964,6 +1011,15 @@ abstract class PixelPlayDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Add disc_number to songs table.
+         */
+        val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                ensureSongsTableHasDiscNumber(db)
+            }
+        }
+
         private fun recreateNavidromeSongsTable(db: SupportSQLiteDatabase) {
             db.execSQL("DROP TABLE IF EXISTS navidrome_songs_new")
             db.execSQL(
@@ -980,7 +1036,7 @@ abstract class PixelPlayDatabase : RoomDatabase() {
                         cover_art_id TEXT,
                         duration INTEGER NOT NULL,
                         track_number INTEGER NOT NULL,
-                        disc_number INTEGER NOT NULL,
+                        disc_number INTEGER,
                         year INTEGER NOT NULL,
                         genre TEXT,
                         bitRate INTEGER,
@@ -1081,5 +1137,28 @@ abstract class PixelPlayDatabase : RoomDatabase() {
             db.execSQL("CREATE INDEX IF NOT EXISTS index_navidrome_songs_playlist_id ON navidrome_songs(playlist_id)")
             db.execSQL("CREATE INDEX IF NOT EXISTS index_navidrome_songs_playlist_id_date_added ON navidrome_songs(playlist_id, date_added)")
         }
+
+        val MIGRATION_31_32 = object : Migration(31, 32) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. Add thread_id column to telegram_songs
+                db.execSQL("ALTER TABLE telegram_songs ADD COLUMN thread_id INTEGER DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_telegram_songs_thread_id ON telegram_songs(thread_id)")
+
+                // 2. Create telegram_topics table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS telegram_topics (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        chat_id INTEGER NOT NULL,
+                        thread_id INTEGER NOT NULL,
+                        name TEXT NOT NULL,
+                        song_count INTEGER NOT NULL DEFAULT 0,
+                        last_sync_time INTEGER NOT NULL DEFAULT 0,
+                        icon_emoji TEXT
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_telegram_topics_chat_id ON telegram_topics(chat_id)")
+            }
+        }
+
     }
 }

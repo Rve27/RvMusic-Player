@@ -13,51 +13,54 @@ import kotlin.math.absoluteValue
         Index(value = ["chat_id"]),
         Index(value = ["message_id"]),
         Index(value = ["file_id"]),
-        Index(value = ["chat_id", "message_id"])
+        Index(value = ["chat_id", "message_id"]),
+        Index(value = ["thread_id"])  // NEW: index for topic queries
     ]
 )
 data class TelegramSongEntity(
     @PrimaryKey
     @ColumnInfo(name = "id") val id: String, // format: "chatId_messageId"
-    
+
     @ColumnInfo(name = "chat_id") val chatId: Long,
     @ColumnInfo(name = "message_id") val messageId: Long,
     @ColumnInfo(name = "file_id") val fileId: Int,
-    
+
     @ColumnInfo(name = "title") val title: String,
     @ColumnInfo(name = "artist") val artist: String,
     @ColumnInfo(name = "duration") val duration: Long,
-    
+
     @ColumnInfo(name = "file_path") val filePath: String, // Empty if not downloaded
     @ColumnInfo(name = "mime_type") val mimeType: String,
     @ColumnInfo(name = "date_added") val dateAdded: Long,
-    @ColumnInfo(name = "album_art_uri") val albumArtUriString: String? = null
+    @ColumnInfo(name = "album_art_uri") val albumArtUriString: String? = null,
+
+    // NEW: null means the message is not in a topic / channel is not a forum
+    @ColumnInfo(name = "thread_id") val threadId: Long? = null
 )
 
-fun TelegramSongEntity.toSong(channelTitle: String? = null): Song {
-    // Construct a virtual path for the "Folders" view if the file isn't downloaded.
-    // We use a path structure that mimics standard storage so the app's folder builder handles it correctly.
-    // "/storage/emulated/0" is the standard external storage root.
+fun TelegramSongEntity.toSong(channelTitle: String? = null, topicName: String? = null): Song {
     val resolvedPath = if (this.filePath.isNotEmpty()) {
-        this.filePath 
+        this.filePath
     } else {
-        "/storage/emulated/0/Telegram Stream/${channelTitle ?: "Unknown Channel"}/${this.title}.mp3"
+        val folder = topicName?.let { "$channelTitle/$it" } ?: channelTitle ?: "Telegram Stream"
+        "/storage/emulated/0/Telegram Stream/$folder/${this.title}.mp3"
     }
 
     val syntheticArtistId = -(this.artist.hashCode().toLong().absoluteValue)
-    val syntheticAlbumId = -((channelTitle ?: "Telegram Stream").hashCode().toLong().absoluteValue)
+    val albumLabel = topicName ?: channelTitle ?: "Telegram Stream"
+    val syntheticAlbumId = -((albumLabel).hashCode().toLong().absoluteValue)
 
     return Song(
-        id = this.id, // String ID
+        id = this.id,
         title = this.title,
         artist = this.artist,
-        artistId = syntheticArtistId, 
+        artistId = syntheticArtistId,
         artists = emptyList(),
-        album = channelTitle ?: "Telegram Stream",
+        album = albumLabel,
         albumId = syntheticAlbumId,
         albumArtist = channelTitle ?: "Telegram",
         path = resolvedPath,
-        contentUriString = this.filePath.ifEmpty { "telegram://${this.chatId}/${this.messageId}" }, // Persistent URI scheme
+        contentUriString = this.filePath.ifEmpty { "telegram://${this.chatId}/${this.messageId}" },
         albumArtUriString = this.albumArtUriString,
         duration = this.duration,
         genre = "Telegram",
@@ -77,9 +80,9 @@ fun TelegramSongEntity.toSong(channelTitle: String? = null): Song {
 fun Song.toTelegramEntity(): TelegramSongEntity? {
     if (this.telegramChatId == null || this.telegramFileId == null) return null
     return TelegramSongEntity(
-        id = this.id, // Must be the "chatId_messageId" format
+        id = this.id,
         chatId = this.telegramChatId,
-        messageId = this.id.substringAfterLast("_").toLongOrNull() ?: 0L, 
+        messageId = this.id.substringAfterLast("_").toLongOrNull() ?: 0L,
         fileId = this.telegramFileId,
         title = this.title,
         artist = this.artist,
@@ -87,6 +90,11 @@ fun Song.toTelegramEntity(): TelegramSongEntity? {
         filePath = this.path,
         mimeType = this.mimeType ?: "audio/mpeg",
         dateAdded = this.dateAdded,
-        albumArtUriString = this.albumArtUriString
+        albumArtUriString = this.albumArtUriString,
+        threadId = null // Filled explicitly when syncing via topic
     )
+}
+
+fun Song.toTelegramEntityWithThread(threadId: Long?): TelegramSongEntity? {
+    return toTelegramEntity()?.copy(threadId = threadId)
 }

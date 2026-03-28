@@ -31,6 +31,8 @@ data class WearPlayerState(
     val volumeMax: Int = 0,
     /** Palette snapshot generated on phone (optional). */
     val themePalette: WearThemePalette? = null,
+    /** Changes whenever the active phone queue or current queue position changes. */
+    val queueRevision: String = "",
 ) {
     val isEmpty: Boolean
         get() = songId.isEmpty()

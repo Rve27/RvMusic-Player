@@ -1,12 +1,12 @@
 package com.rve.musicplayer.data.service.tile
 
-import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import androidx.annotation.RequiresApi
 import com.rve.musicplayer.MainActivity
+import com.rve.musicplayer.MainActivityIntentContract
 
 /**
  * Quick Settings tile that shuffles and plays all songs.
@@ -15,6 +15,10 @@ import com.rve.musicplayer.MainActivity
  */
 @RequiresApi(Build.VERSION_CODES.N)
 class ShuffleAllTileService : TileService() {
+
+    companion object {
+        private const val REQUEST_CODE_SHUFFLE_ALL = 1001
+    }
 
     override fun onStartListening() {
         qsTile?.apply {
@@ -25,15 +29,12 @@ class ShuffleAllTileService : TileService() {
 
     override fun onClick() {
         val intent = Intent(this, MainActivity::class.java).apply {
-            action = MainActivity.ACTION_SHUFFLE_ALL
+            action = MainActivityIntentContract.ACTION_SHUFFLE_ALL
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        startActivityAndCollapseCompat(
+            intent = intent,
+            requestCode = REQUEST_CODE_SHUFFLE_ALL
         )
-        startActivityAndCollapse(pendingIntent)
     }
 }

@@ -26,5 +26,11 @@ data class WearTransferMetadata(
     val paletteSeedArgb: Int? = null,
     /** Full watch palette snapshot so local watch playback matches phone playback exactly. */
     val themePalette: WearThemePalette? = null,
+    /** Mirrors the request mode so the watch knows whether to persist the received audio. */
+    val transferMode: String = WearTransferRequest.MODE_SAVE_TO_LIBRARY,
+    /** Position to restore when local playback starts on watch. */
+    val startPositionMs: Long = 0L,
+    /** Whether playback should start automatically once the transfer finishes. */
+    val autoPlay: Boolean = false,
     val error: String? = null,
 )

@@ -260,9 +260,9 @@ class ArtistDetailViewModel @Inject constructor(
     }
 }
 
-private val songDisplayComparator = compareBy<Song> {
-    if (it.trackNumber > 0) it.trackNumber else Int.MAX_VALUE
-}.thenBy { it.title.lowercase() }
+private val songDisplayComparator = compareBy<Song> { it.discNumber }
+    .thenBy { if (it.trackNumber > 0) it.trackNumber else Int.MAX_VALUE }
+    .thenBy { it.title.lowercase() }
 
 private fun buildAlbumSections(songs: List<Song>): List<ArtistAlbumSection> {
     if (songs.isEmpty()) return emptyList()

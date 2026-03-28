@@ -80,7 +80,7 @@ fun SongInfoBottomSheet(
     onDeleteFromDevice: (activity: Activity, song: Song, onResult: (Boolean) -> Unit) -> Unit,
     onNavigateToAlbum: () -> Unit,
     onNavigateToArtist: () -> Unit,
-    onEditSong: (title: String, artist: String, album: String, genre: String, lyrics: String, trackNumber: Int, coverArtUpdate: CoverArtUpdate?) -> Unit,
+    onEditSong: (title: String, artist: String, album: String, genre: String, lyrics: String, trackNumber: Int, discNumber: Int?, coverArtUpdate: CoverArtUpdate?) -> Unit,
     generateAiMetadata: suspend (List<String>) -> Result<SongMetadata>,
     removeFromListTrigger: () -> Unit,
     songInfoViewModel: SongInfoBottomSheetViewModel = hiltViewModel()
@@ -748,8 +748,8 @@ fun SongInfoBottomSheet(
         visible = showEditSheet,
         song = song,
         onDismiss = { showEditSheet = false },
-        onSave = { title, artist, album, genre, lyrics, trackNumber, coverArt ->
-            onEditSong(title, artist, album, genre, lyrics, trackNumber, coverArt)
+        onSave = { title, artist, album, genre, lyrics, trackNumber, discNumber, coverArt ->
+            onEditSong(title, artist, album, genre, lyrics, trackNumber, discNumber, coverArt)
             showEditSheet = false
         },
         generateAiMetadata = generateAiMetadata

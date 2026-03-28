@@ -107,6 +107,7 @@ class WearStatePublisher @Inject constructor(
             volumeLevel = volumeLevel,
             volumeMax = volumeMax,
             themePalette = buildWearThemePalette(playerInfo),
+            queueRevision = playerInfo.wearQueueRevision,
         )
 
         val stateJson = json.encodeToString(wearState)

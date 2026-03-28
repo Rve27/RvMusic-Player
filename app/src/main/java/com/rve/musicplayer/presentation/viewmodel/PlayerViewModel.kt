@@ -1778,9 +1778,9 @@ class PlayerViewModel @Inject constructor(
 
                 if (songsList.isNotEmpty()) {
                     val sortedSongs = songsList.sortedWith(
-                        compareBy<Song> {
-                            if (it.trackNumber > 0) it.trackNumber else Int.MAX_VALUE
-                        }.thenBy { it.title.lowercase() }
+                        compareBy<Song> { it.discNumber }
+                            .thenBy { if (it.trackNumber > 0) it.trackNumber else Int.MAX_VALUE }
+                            .thenBy { it.title.lowercase() }
                     )
 
                     playSongs(sortedSongs, sortedSongs.first(), album.title, null)
@@ -2896,9 +2896,9 @@ class PlayerViewModel @Inject constructor(
                             if (albumSongs.isNotEmpty()) {
                                 addAll(
                                     albumSongs.sortedWith(
-                                        compareBy<Song> {
-                                            if (it.trackNumber > 0) it.trackNumber else Int.MAX_VALUE
-                                        }.thenBy { it.title.lowercase(Locale.getDefault()) }
+                                        compareBy<Song> { it.discNumber }
+                                            .thenBy { if (it.trackNumber > 0) it.trackNumber else Int.MAX_VALUE }
+                                            .thenBy { it.title.lowercase(java.util.Locale.getDefault()) }
                                     )
                                 )
                             }
@@ -3659,6 +3659,7 @@ class PlayerViewModel @Inject constructor(
         newGenre: String,
         newLyrics: String,
         newTrackNumber: Int,
+        newDiscNumber: Int?,
         coverArtUpdate: CoverArtUpdate?,
     ) {
         viewModelScope.launch {
@@ -3674,6 +3675,7 @@ class PlayerViewModel @Inject constructor(
                 newGenre = newGenre,
                 newLyrics = newLyrics,
                 newTrackNumber = newTrackNumber,
+                newDiscNumber = newDiscNumber,
                 coverArtUpdate = coverArtUpdate
             )
 
@@ -3933,6 +3935,7 @@ class PlayerViewModel @Inject constructor(
                     newGenre = newGenre,
                     newLyrics = sourceSong.lyrics ?: "",
                     newTrackNumber = sourceSong.trackNumber,
+                    newDiscNumber =  sourceSong.discNumber,
                     coverArtUpdate = null
                 )
 

@@ -171,10 +171,14 @@ class WearPlayerViewModel @Inject constructor(
 
     val canCurrentSongPlayOnWatch: StateFlow<Boolean> = combine(
         isLocalPlaybackActive,
-        playerState,
+        isPhoneConnected,
+        stateRepository.playerState,
         localSongs,
-    ) { localActive, player, songs ->
-        localActive || (player.songId.isNotBlank() && songs.any { it.songId == player.songId })
+    ) { localActive, phoneConnected, remoteState, songs ->
+        localActive || (
+            remoteState.songId.isNotBlank() &&
+                (songs.any { it.songId == remoteState.songId } || phoneConnected)
+            )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val canCurrentSongBeFavorited: StateFlow<Boolean> = combine(
@@ -256,19 +260,51 @@ class WearPlayerViewModel @Inject constructor(
     fun selectOutput(target: WearOutputTarget) {
         when (target) {
             WearOutputTarget.WATCH -> {
-                if (localPlayerRepository.isLocalPlaybackActive.value) {
+                val remoteState = stateRepository.playerState.value
+                val remoteSongId = remoteState.songId
+                val localState = localPlayerRepository.localPlayerState.value
+
+                if (
+                    localPlayerRepository.isLocalPlaybackActive.value &&
+                    (remoteSongId.isBlank() || localState.songId == remoteSongId)
+                ) {
+                    if (remoteSongId.isNotBlank() && localState.songId == remoteSongId) {
+                        localPlayerRepository.seekTo(remoteState.currentPositionMs)
+                        if (remoteState.isPlaying) {
+                            localPlayerRepository.play()
+                            playbackController.pause()
+                        } else {
+                            localPlayerRepository.pause()
+                        }
+                    }
                     stateRepository.setOutputTarget(WearOutputTarget.WATCH)
                     return
                 }
 
-                val remoteSongId = stateRepository.playerState.value.songId
                 if (remoteSongId.isBlank()) return
                 val songs = localSongs.value
                 val startIndex = songs.indexOfFirst { it.songId == remoteSongId }
-                if (startIndex == -1 || songs.isEmpty()) return
+                if (startIndex != -1 && songs.isNotEmpty()) {
+                    localPlayerRepository.playLocalSongs(
+                        songs = songs,
+                        startIndex = startIndex,
+                        startPositionMs = remoteState.currentPositionMs,
+                        autoPlay = remoteState.isPlaying,
+                    )
+                    stateRepository.setOutputTarget(WearOutputTarget.WATCH)
+                    if (remoteState.isPlaying) {
+                        playbackController.pause()
+                    }
+                    return
+                }
 
-                localPlayerRepository.playLocalSongs(songs, startIndex)
-                stateRepository.setOutputTarget(WearOutputTarget.WATCH)
+                if (!isPhoneConnected.value) return
+                transferRepository.requestTemporaryPlayback(
+                    songId = remoteSongId,
+                    startPositionMs = remoteState.currentPositionMs,
+                    autoPlay = remoteState.isPlaying,
+                    pausePhoneAfterStart = remoteState.isPlaying,
+                )
             }
 
             WearOutputTarget.PHONE -> {

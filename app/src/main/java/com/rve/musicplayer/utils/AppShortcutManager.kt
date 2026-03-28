@@ -7,6 +7,7 @@ import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import com.rve.musicplayer.MainActivity
+import com.rve.musicplayer.MainActivityIntentContract
 import com.rve.musicplayer.R
 import com.rve.musicplayer.data.preferences.UserPreferencesRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -49,8 +50,8 @@ class AppShortcutManager @Inject constructor(
         }
 
         val intent = Intent(context, MainActivity::class.java).apply {
-            action = MainActivity.ACTION_OPEN_PLAYLIST
-            putExtra(MainActivity.EXTRA_PLAYLIST_ID, playlistId)
+            action = MainActivityIntentContract.ACTION_OPEN_PLAYLIST
+            putExtra(MainActivityIntentContract.EXTRA_PLAYLIST_ID, playlistId)
         }
 
         val shortcut = ShortcutInfoCompat.Builder(context, SHORTCUT_ID_LAST_PLAYLIST)
@@ -69,6 +70,9 @@ class AppShortcutManager @Inject constructor(
      * Removes the last playlist shortcut if it exists.
      */
     fun removeLastPlaylistShortcut() {
+        scope.launch {
+            userPreferencesRepository.clearLastPlaylist()
+        }
         ShortcutManagerCompat.removeDynamicShortcuts(context, listOf(SHORTCUT_ID_LAST_PLAYLIST))
     }
 }

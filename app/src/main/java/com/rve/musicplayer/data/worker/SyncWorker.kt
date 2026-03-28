@@ -641,6 +641,7 @@ constructor(
             val albumArtist: String?,
             val duration: Long,
             val trackNumber: Int,
+            val discNumber: Int?,
             val year: Int,
             val dateModified: Long
     )
@@ -660,6 +661,7 @@ constructor(
             existing.artistId == raw.artistId &&
             existing.duration == raw.duration &&
             existing.trackNumber == raw.trackNumber &&
+            existing.discNumber == raw.discNumber &&
             existing.year == raw.year &&
             existingDateModifiedSeconds == raw.dateModified
     }
@@ -780,6 +782,7 @@ constructor(
                                                 else null,
                                         duration = cursor.getLong(durationCol),
                                         trackNumber = cursor.getInt(trackCol) % 1000,
+                                        discNumber = (cursor.getInt(trackCol) / 1000).takeIf { it > 0 },
                                         year = cursor.getInt(yearCol),
                                         dateModified = cursor.getLong(dateModifiedCol)
                                 )
@@ -867,6 +870,7 @@ constructor(
                                     albumName = if (localSong.albumName.isNotBlank() && localSong.albumName != mediaStoreSong.albumName) localSong.albumName else mediaStoreSong.albumName,
                                     genre = localSong.genre ?: mediaStoreSong.genre,
                                     trackNumber = if (localSong.trackNumber != 0) localSong.trackNumber else mediaStoreSong.trackNumber,
+                                    discNumber = localSong.discNumber ?: mediaStoreSong.discNumber,
                                     albumArtUriString = mediaStoreSong.albumArtUriString
                                 )
                             } else {
@@ -936,6 +940,7 @@ constructor(
             metadataAlbumArtist = null
         )
         var trackNumber = raw.trackNumber
+        var discNumber = raw.discNumber
         var year = raw.year
         var genre: String? = genreMap[raw.id] // Use mapped genre as default
 
@@ -967,6 +972,7 @@ constructor(
                         )
                         if (!meta.genre.isNullOrBlank()) genre = meta.genre
                         if (meta.trackNumber != null) trackNumber = meta.trackNumber
+                        if (meta.discNumber != null) discNumber = meta.discNumber
                         if (meta.year != null) year = meta.year
 
                         meta.artwork?.let { art ->
@@ -994,6 +1000,7 @@ constructor(
                 filePath = raw.filePath,
                 parentDirectoryPath = parentDir,
                 trackNumber = trackNumber,
+                discNumber = discNumber,
                 year = year,
                 dateAdded =
                         raw.dateModified.let { seconds ->

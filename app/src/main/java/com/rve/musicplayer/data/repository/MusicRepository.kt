@@ -243,14 +243,18 @@ interface MusicRepository {
     suspend fun saveTelegramSongs(songs: List<Song>)
 
     suspend fun replaceTelegramSongsForChannel(chatId: Long, songs: List<Song>)
-    
+
     suspend fun clearTelegramData()
 
     suspend fun saveTelegramChannel(channel: TelegramChannelEntity)
     fun getAllTelegramChannels(): Flow<List<TelegramChannelEntity>>
     suspend fun deleteTelegramChannel(chatId: Long)
-    
-    
+    suspend fun saveTelegramTopics(chatId: Long, topics: List<com.rve.musicplayer.data.database.TelegramTopicEntity>)
+    /** Replaces the full topic list for a channel, deleting any topics that no longer exist. */
+    suspend fun replaceTopicsForChannel(chatId: Long, freshTopics: List<com.rve.musicplayer.data.database.TelegramTopicEntity>)
+    suspend fun getTopicsForChannel(chatId: Long): List<com.rve.musicplayer.data.database.TelegramTopicEntity>
+    suspend fun replaceTelegramSongsForTopic(chatId: Long, threadId: Long, topicName: String, songs: List<Song>)
+
     val telegramRepository: com.rve.musicplayer.data.telegram.TelegramRepository
 
     suspend fun getSongIdsSorted(

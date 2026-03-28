@@ -60,6 +60,7 @@ class MetadataEditStateHolder @Inject constructor(
         newGenre: String,
         newLyrics: String,
         newTrackNumber: Int,
+        newDiscNumber: Int?,
         coverArtUpdate: CoverArtUpdate?
     ): MetadataEditResult = withContext(Dispatchers.IO) {
         
@@ -80,6 +81,9 @@ class MetadataEditStateHolder @Inject constructor(
             } else {
                 null
             }
+        } else if (coverArtUpdate.isDeletion) {
+            Log.d("MetadataEditStateHolder", "Artwork deletion requested, skipping preservation")
+            coverArtUpdate
         } else {
             coverArtUpdate
         }
@@ -107,6 +111,7 @@ class MetadataEditStateHolder @Inject constructor(
             newGenre = newGenre,
             newLyrics = trimmedLyrics,
             newTrackNumber = newTrackNumber,
+            newDiscNumber = newDiscNumber,
             coverArtUpdate = finalCoverArtUpdate,
             songId = resolvedSongId,
         )
@@ -114,7 +119,11 @@ class MetadataEditStateHolder @Inject constructor(
         Log.d("MetadataEditStateHolder", "Editor result: success=${result.success}, error=${result.error}")
 
         if (result.success) {
-            val refreshedAlbumArtUri = result.updatedAlbumArtUri ?: song.albumArtUriString
+            val refreshedAlbumArtUri = if (coverArtUpdate?.isDeletion == true) {
+                null
+            } else {
+                result.updatedAlbumArtUri ?: song.albumArtUriString
+            }
             
             // Update Repository (Lyrics)
             if (normalizedLyrics != null) {
@@ -130,6 +139,7 @@ class MetadataEditStateHolder @Inject constructor(
                 genre = newGenre,
                 lyrics = normalizedLyrics,
                 trackNumber = newTrackNumber,
+                discNumber = newDiscNumber,
                 albumArtUriString = refreshedAlbumArtUri,
             )
 
@@ -137,20 +147,27 @@ class MetadataEditStateHolder @Inject constructor(
             // When metadata changes (especially album/artist), MediaStore might re-index the song
             // and assign it a NEW album ID, resulting in a NEW albumArtUri.
             // Using the 'updatedSong' copy above might retain a STALE albumArtUri.
-            val freshSong = try {
+            val freshSongFromRepo = try {
                 musicRepository.getSong(song.id).first() ?: updatedSong
             } catch (e: Exception) {
                 updatedSong
             }
 
+            // Ensure we use the refreshed artwork URI we just generated/cleared.
+            // The repository emission may be stale for a split second.
+            val freshSong = freshSongFromRepo.copy(
+                albumArtUriString = refreshedAlbumArtUri
+            )
+
             // Force cache invalidation if album art might have changed
-            if (refreshedAlbumArtUri != null) {
-                // Invalidate Coil/Glide caches
-                imageCacheManager.invalidateCoverArtCaches(refreshedAlbumArtUri)
-                
-                // Force regenerate palette
-                themeStateHolder.forceRegenerateColorScheme(refreshedAlbumArtUri)
+            val uriToInvalidate = if (coverArtUpdate?.isDeletion == true) song.albumArtUriString else refreshedAlbumArtUri
+            if (uriToInvalidate != null) {
+                // Invalidate Coil/Glide caches for the affected URI (old or new)
+                imageCacheManager.invalidateCoverArtCaches(uriToInvalidate)
             }
+            
+            // Force regenerate palette
+            themeStateHolder.forceRegenerateColorScheme(refreshedAlbumArtUri)
 
             MetadataEditResult(
                 success = true,

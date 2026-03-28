@@ -3,11 +3,14 @@
 package com.rve.musicplayer.presentation.telegram.dashboard
 
 import android.text.format.DateUtils
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,14 +38,18 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Topic
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -80,6 +87,7 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.rve.musicplayer.data.database.TelegramChannelEntity
+import com.rve.musicplayer.data.database.TelegramTopicEntity
 import com.rve.musicplayer.presentation.components.CollapsibleCommonTopBar
 import com.rve.musicplayer.presentation.components.NoInternetScreen
 import com.rve.musicplayer.ui.theme.GoogleSansRounded
@@ -102,6 +110,8 @@ fun TelegramDashboardScreen(
     val isRefreshingId by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val statusMessage by viewModel.statusMessage.collectAsStateWithLifecycle()
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
+    val topicsMap by viewModel.topicsMap.collectAsStateWithLifecycle()
+    val expandedChannels by viewModel.expandedChannels.collectAsStateWithLifecycle()
     var selectedChannelForActions by remember { mutableStateOf<TelegramChannelEntity?>(null) }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -118,6 +128,13 @@ fun TelegramDashboardScreen(
         statusMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.clearStatus()
+        }
+    }
+
+    // Load cached topics for all channels on first composition
+    LaunchedEffect(channels) {
+        channels.forEach { channel ->
+            viewModel.loadTopicsForChannel(channel.chatId)
         }
     }
 
@@ -139,9 +156,9 @@ fun TelegramDashboardScreen(
 
     LaunchedEffect(topBarHeight.value, maxTopBarHeightPx) {
         collapseFraction = 1f - (
-            (topBarHeight.value - minTopBarHeightPx) /
-                (maxTopBarHeightPx - minTopBarHeightPx)
-            ).coerceIn(0f, 1f)
+                (topBarHeight.value - minTopBarHeightPx) /
+                        (maxTopBarHeightPx - minTopBarHeightPx)
+                ).coerceIn(0f, 1f)
     }
 
     val nestedScrollConnection = remember {
@@ -222,11 +239,17 @@ fun TelegramDashboardScreen(
                         items = channels,
                         key = { _, channel -> channel.chatId }
                     ) { _, channel ->
+                        val channelTopics = topicsMap[channel.chatId] ?: emptyList()
+                        val isExpanded = channel.chatId in expandedChannels
+
                         ExpressiveChannelItem(
                             channel = channel,
                             isSyncing = isRefreshingId == channel.chatId,
+                            topics = channelTopics,
+                            isExpanded = isExpanded,
                             onSync = { viewModel.refreshChannel(channel) },
-                            onOpenActions = { selectedChannelForActions = channel }
+                            onOpenActions = { selectedChannelForActions = channel },
+                            onToggleExpand = { viewModel.toggleChannelExpanded(channel.chatId) }
                         )
                     }
                 }
@@ -254,7 +277,7 @@ fun TelegramDashboardScreen(
             label = "telegramFabScale"
         )
 
-        if(channels.isNotEmpty()){
+        if (channels.isNotEmpty()) {
             MediumExtendedFloatingActionButton(
                 onClick = onAddChannel,
                 text = {
@@ -313,8 +336,11 @@ fun TelegramDashboardScreen(
 private fun ExpressiveChannelItem(
     channel: TelegramChannelEntity,
     isSyncing: Boolean,
+    topics: List<TelegramTopicEntity>,
+    isExpanded: Boolean,
     onSync: () -> Unit,
-    onOpenActions: () -> Unit
+    onOpenActions: () -> Unit,
+    onToggleExpand: () -> Unit
 ) {
     val cardShape = AbsoluteSmoothCornerShape(
         cornerRadiusTR = 28.dp,
@@ -358,6 +384,7 @@ private fun ExpressiveChannelItem(
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // ── Channel header row ──────────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -420,6 +447,7 @@ private fun ExpressiveChannelItem(
                 }
             }
 
+            // ── Meta pills ──────────────────────────────────────────────
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -432,8 +460,15 @@ private fun ExpressiveChannelItem(
                     icon = Icons.Rounded.AccessTime,
                     label = lastSyncLabel
                 )
+                if (topics.isNotEmpty()) {
+                    ChannelMetaPill(
+                        icon = Icons.Rounded.Topic,
+                        label = "${topics.size} topics"
+                    )
+                }
             }
 
+            // ── Action buttons ──────────────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -467,22 +502,133 @@ private fun ExpressiveChannelItem(
                     }
                 }
 
-                Box {
+                // Show expand/collapse button only when topics exist
+                if (topics.isNotEmpty()) {
                     FilledTonalIconButton(
-                        onClick = onOpenActions,
+                        onClick = onToggleExpand,
                         colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            contentColor = MaterialTheme.colorScheme.onSurface
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
                         )
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.MoreVert,
-                            contentDescription = "Channel options"
+                            imageVector = if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                            contentDescription = if (isExpanded) "Collapse topics" else "Show topics"
                         )
+                    }
+                }
+
+                FilledTonalIconButton(
+                    onClick = onOpenActions,
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = "Channel options"
+                    )
+                }
+            }
+
+            // ── Expandable topics list ──────────────────────────────────
+            AnimatedVisibility(
+                visible = isExpanded && topics.isNotEmpty(),
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Topics",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontFamily = GoogleSansRounded,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    topics.forEach { topic ->
+                        TopicRow(topic = topic)
                     }
                 }
             }
         }
+    }
+}
+
+// ─── Single topic row ─────────────────────────────────────────────────────────
+
+@Composable
+private fun TopicRow(topic: TelegramTopicEntity) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.secondaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = topic.iconEmoji?.let { "\uD83C\uDFB5" } ?: "🎵",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = topic.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = GoogleSansRounded,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "${topic.songCount} songs",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = GoogleSansRounded,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+//            if (topic.songCount > 0) {
+//                Text(
+//                    text = "${topic.songCount} songs",
+//                    style = MaterialTheme.typography.labelSmall,
+//                    fontFamily = GoogleSansRounded,
+//                    color = MaterialTheme.colorScheme.onSurfaceVariant
+//                )
+//            } else {
+//                Text(
+//                    text = "Sync to load songs",
+//                    style = MaterialTheme.typography.labelSmall,
+//                    fontFamily = GoogleSansRounded,
+//                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+//                )
+//            }
+        }
+
+//        Icon(
+//            imageVector = Icons.Rounded.ChevronRight,
+//            contentDescription = null,
+//            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+//            modifier = Modifier.size(18.dp)
+//        )
     }
 }
 

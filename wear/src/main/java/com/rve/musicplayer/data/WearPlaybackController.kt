@@ -52,6 +52,8 @@ class WearPlaybackController @Inject constructor(
     }
 
     // Convenience methods for common actions
+    fun play() = sendCommand(WearPlaybackCommand(WearPlaybackCommand.PLAY))
+    fun pause() = sendCommand(WearPlaybackCommand(WearPlaybackCommand.PAUSE))
     fun togglePlayPause() = sendCommand(WearPlaybackCommand(WearPlaybackCommand.TOGGLE_PLAY_PAUSE))
     fun next() = sendCommand(WearPlaybackCommand(WearPlaybackCommand.NEXT))
     fun previous() = sendCommand(WearPlaybackCommand(WearPlaybackCommand.PREVIOUS))

@@ -117,6 +117,58 @@ class PixelPlayDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migration30to31_addsDiscNumberWithNullDefault_whenColumnIsMissing() {
+        withDatabase(version = 30) { db ->
+            createSupportingTables(db)
+            db.execSQL("INSERT INTO artists (id) VALUES (10)")
+            db.execSQL("INSERT INTO albums (id) VALUES (20)")
+            insertSong(db)
+
+            PixelPlayDatabase.MIGRATION_30_31.migrate(db)
+
+            assertTrue("songs table should contain disc_number", "disc_number" in getTableColumns(db, "songs"))
+            assertEquals("null", getColumnDefaultValue(db, "songs", "disc_number")?.lowercase())
+            assertTrue(
+                "songs table should expose every expected index",
+                getIndexNames(db, "songs").containsAll(EXPECTED_SONG_INDEXES)
+            )
+
+            db.query("SELECT title, disc_number FROM songs WHERE id = 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Song A", cursor.getString(0))
+                assertTrue(cursor.isNull(1))
+            }
+        }
+    }
+
+    @Test
+    fun migration30to31_recreatesSongsTable_whenDiscNumberAlreadyExistsWithoutDefault() {
+        withDatabase(version = 30) { db ->
+            createSupportingTables(
+                db,
+                discNumberColumnSql = "disc_number INTEGER"
+            )
+            db.execSQL("INSERT INTO artists (id) VALUES (10)")
+            db.execSQL("INSERT INTO albums (id) VALUES (20)")
+            insertSong(db, includeDiscNumber = true, discNumber = 2)
+
+            PixelPlayDatabase.MIGRATION_30_31.migrate(db)
+
+            assertEquals("null", getColumnDefaultValue(db, "songs", "disc_number")?.lowercase())
+            assertTrue(
+                "songs table should expose every expected index",
+                getIndexNames(db, "songs").containsAll(EXPECTED_SONG_INDEXES)
+            )
+
+            db.query("SELECT title, disc_number FROM songs WHERE id = 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Song A", cursor.getString(0))
+                assertEquals(2, cursor.getInt(1))
+            }
+        }
+    }
+
     private fun withDatabase(version: Int, block: (SupportSQLiteDatabase) -> Unit) {
         val name = "migration-test-${UUID.randomUUID()}.db"
         databaseNames += name
@@ -152,11 +204,13 @@ class PixelPlayDatabaseMigrationTest {
 
     private fun createSupportingTables(
         db: SupportSQLiteDatabase,
-        includeSongsTable: Boolean = true
+        includeSongsTable: Boolean = true,
+        discNumberColumnSql: String? = null
     ) {
         db.execSQL("CREATE TABLE IF NOT EXISTS artists (id INTEGER NOT NULL PRIMARY KEY)")
         db.execSQL("CREATE TABLE IF NOT EXISTS albums (id INTEGER NOT NULL PRIMARY KEY)")
         if (includeSongsTable) {
+            val discNumberColumnSegment = discNumberColumnSql?.let { "                        $it,\n" }.orEmpty()
             db.execSQL(
                 """
                     CREATE TABLE IF NOT EXISTS songs (
@@ -176,6 +230,7 @@ class PixelPlayDatabaseMigrationTest {
                         is_favorite INTEGER NOT NULL DEFAULT 0,
                         lyrics TEXT DEFAULT null,
                         track_number INTEGER NOT NULL DEFAULT 0,
+${discNumberColumnSegment}
                         year INTEGER NOT NULL DEFAULT 0,
                         mime_type TEXT,
                         bitrate INTEGER,
@@ -208,6 +263,71 @@ class PixelPlayDatabaseMigrationTest {
         )
     }
 
+    private fun insertSong(
+        db: SupportSQLiteDatabase,
+        includeDiscNumber: Boolean = false,
+        discNumber: Int? = null
+    ) {
+        val discNumberColumnSegment = if (includeDiscNumber) ",\n                        disc_number" else ""
+        val discNumberValueSegment = if (includeDiscNumber) {
+            ",\n                        ${discNumber ?: "NULL"}"
+        } else {
+            ""
+        }
+
+        db.execSQL(
+            """
+                INSERT INTO songs (
+                    id,
+                    title,
+                    artist_name,
+                    artist_id,
+                    album_artist,
+                    album_name,
+                    album_id,
+                    content_uri_string,
+                    album_art_uri_string,
+                    duration,
+                    genre,
+                    file_path,
+                    parent_directory_path,
+                    is_favorite,
+                    lyrics,
+                    track_number,
+                    year,
+                    mime_type,
+                    bitrate,
+                    sample_rate,
+                    telegram_chat_id,
+                    telegram_file_id$discNumberColumnSegment
+                ) VALUES (
+                    1,
+                    'Song A',
+                    'Artist A',
+                    10,
+                    NULL,
+                    'Album A',
+                    20,
+                    'content://song/1',
+                    NULL,
+                    180000,
+                    'Pop',
+                    '/music/song-a.mp3',
+                    '/music',
+                    0,
+                    NULL,
+                    1,
+                    2025,
+                    'audio/mpeg',
+                    320000,
+                    44100,
+                    NULL,
+                    NULL$discNumberValueSegment
+                )
+            """.trimIndent()
+        )
+    }
+
     private fun getTableColumns(db: SupportSQLiteDatabase, tableName: String): Set<String> {
         val columns = mutableSetOf<String>()
         db.query("PRAGMA table_info(`$tableName`)").use { cursor ->
@@ -217,6 +337,23 @@ class PixelPlayDatabaseMigrationTest {
             }
         }
         return columns
+    }
+
+    private fun getColumnDefaultValue(
+        db: SupportSQLiteDatabase,
+        tableName: String,
+        columnName: String
+    ): String? {
+        db.query("PRAGMA table_info(`$tableName`)").use { cursor ->
+            val nameIndex = cursor.getColumnIndex("name")
+            val defaultValueIndex = cursor.getColumnIndex("dflt_value")
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == columnName) {
+                    return cursor.getString(defaultValueIndex)
+                }
+            }
+        }
+        return null
     }
 
     private fun getIndexNames(db: SupportSQLiteDatabase, tableName: String): Set<String> {

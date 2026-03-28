@@ -27,6 +27,7 @@ private const val SONG_DETAIL_PROJECTION = """
     songs.is_favorite AS is_favorite,
     COALESCE(song_lyrics.content, songs.lyrics) AS lyrics,
     songs.track_number AS track_number,
+    songs.disc_number AS disc_number,
     songs.year AS year,
     songs.date_added AS date_added,
     songs.mime_type AS mime_type,
@@ -159,6 +160,15 @@ interface MusicDao {
     """)
     suspend fun getTelegramSongIdsByChatId(chatId: Long): List<Long>
 
+    @Query("""
+        SELECT s.id FROM songs s
+        INNER JOIN telegram_songs ts
+            ON ts.chat_id = s.telegram_chat_id
+            AND ('telegram://' || ts.chat_id || '/' || ts.message_id) = s.content_uri_string
+        WHERE ts.chat_id = :chatId AND ts.thread_id = :threadId
+    """)
+    suspend fun getTelegramSongIdsByTopicId(chatId: Long, threadId: Long): List<Long>
+
     @Query("SELECT id FROM songs WHERE content_uri_string LIKE 'netease://%'")
     suspend fun getAllNeteaseSongIds(): List<Long>
 
@@ -224,6 +234,13 @@ interface MusicDao {
         val telegramSongIds = getTelegramSongIdsByChatId(chatId)
         if (telegramSongIds.isEmpty()) return
         deleteSongsAndRelatedData(telegramSongIds)
+    }
+
+    @Transaction
+    suspend fun clearTelegramSongsForTopic(chatId: Long, threadId: Long) {
+        val songIds = getTelegramSongIdsByTopicId(chatId, threadId)
+        if (songIds.isEmpty()) return
+        deleteSongsAndRelatedData(songIds)
     }
 
     /**
@@ -309,7 +326,7 @@ interface MusicDao {
         """
     )
     suspend fun getSongByIdOnce(songId: Long): SongEntity?
-    
+
     @Query(
         "SELECT " + SONG_DETAIL_PROJECTION + """
         FROM songs
@@ -332,7 +349,7 @@ interface MusicDao {
         applyDirectoryFilter: Boolean
     ): Flow<List<SongEntity>>
 
-    @Query("SELECT * FROM songs WHERE album_id = :albumId ORDER BY title ASC")
+    @Query("SELECT * FROM songs WHERE album_id = :albumId ORDER BY disc_number ASC, track_number ASC")
     fun getSongsByAlbumId(albumId: Long): Flow<List<SongEntity>>
 
     @Query("SELECT * FROM songs WHERE artist_id = :artistId ORDER BY title ASC")
@@ -1003,14 +1020,15 @@ interface MusicDao {
         return newStatus
     }
 
-    @Query("UPDATE songs SET title = :title, artist_name = :artist, album_name = :album, genre = :genre, track_number = :trackNumber WHERE id = :songId")
+    @Query("UPDATE songs SET title = :title, artist_name = :artist, album_name = :album, genre = :genre, track_number = :trackNumber, disc_number = :discNumber WHERE id = :songId")
     suspend fun updateSongMetadata(
         songId: Long,
         title: String,
         artist: String,
         album: String,
         genre: String?,
-        trackNumber: Int
+        trackNumber: Int,
+        discNumber: Int?
     )
 
     @Query("UPDATE songs SET album_art_uri_string = :albumArtUri WHERE id = :songId")
@@ -1235,7 +1253,7 @@ interface MusicDao {
         // Save current cloud songs before clearing to prevent accidental data loss
         // Only clear if we have new songs to insert, or we are explicitly asked to REBUILD everything.
         // We handle this logic at the worker/repository level to be more precise.
-        
+
         clearAllSongArtistCrossRefs()
         clearAllSongs()
         clearAllAlbums()

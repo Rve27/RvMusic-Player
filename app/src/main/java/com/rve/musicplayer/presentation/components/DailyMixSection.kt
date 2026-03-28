@@ -136,7 +136,7 @@ fun DailyMixSection(
                 onNavigateToArtist(song)
                 showSongInfoSheet = false
             },
-            onEditSong = { newTitle, newArtist, newAlbum, newGenre, newLyrics, newTrackNumber, coverArtUpdate ->
+            onEditSong = { newTitle, newArtist, newAlbum, newGenre, newLyrics, newTrackNumber, newDiscNumber, coverArtUpdate ->
                 playerViewModel.editSongMetadata(
                     song,
                     newTitle,
@@ -145,6 +145,7 @@ fun DailyMixSection(
                     newGenre,
                     newLyrics,
                     newTrackNumber,
+                    newDiscNumber,
                     coverArtUpdate
                 )
             },

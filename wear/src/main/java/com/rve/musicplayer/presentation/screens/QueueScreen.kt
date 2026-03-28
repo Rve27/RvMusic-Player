@@ -98,7 +98,7 @@ fun QueueScreen(
             browseViewModel.loadItems(WearBrowseRequest.QUEUE)
         }
     }
-    LaunchedEffect(playerState.songId, remoteControlsEnabled) {
+    LaunchedEffect(playerState.queueRevision, remoteControlsEnabled) {
         if (remoteControlsEnabled) {
             browseViewModel.loadItems(WearBrowseRequest.QUEUE)
         }

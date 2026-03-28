@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
+import com.rve.musicplayer.data.media.AudioMetadataReader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -275,6 +276,14 @@ object AlbumArtUtils {
         return shareableCacheUri(appContext, file)
     }
 
+    /**
+     * Delete both the cached artwork and the "no art" marker for a specific song.
+     */
+    fun clearCacheForSong(appContext: Context, songId: Long) {
+        getCachedAlbumArtFile(appContext, songId).delete()
+        noArtMarkerFile(appContext, songId).delete()
+    }
+
     fun getCachedAlbumArtFile(appContext: Context, songId: Long): File {
         return File(appContext.cacheDir, "song_art_${songId}.jpg")
     }
@@ -335,7 +344,7 @@ object AlbumArtUtils {
     }
 
     private fun extractEmbeddedAlbumArtBytes(filePath: String): ByteArray? {
-        return MediaMetadataRetrieverPool.withRetriever { retriever ->
+        val retrieverArtwork = MediaMetadataRetrieverPool.withRetriever { retriever ->
             try {
                 retriever.setDataSource(filePath)
             } catch (e: IllegalArgumentException) {
@@ -350,6 +359,14 @@ object AlbumArtUtils {
 
             retriever.embeddedPicture?.takeIf { it.isNotEmpty() }
         }
+
+        if (retrieverArtwork != null) {
+            return retrieverArtwork
+        }
+
+        return runCatching {
+            AudioMetadataReader.read(File(filePath))?.artwork?.bytes?.takeIf { it.isNotEmpty() }
+        }.getOrNull()
     }
 
     private fun copyUriToCache(

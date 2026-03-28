@@ -377,6 +377,7 @@ class LyricsStateHolder @Inject constructor(
                     newGenre = song.genre ?: "",
                     newLyrics = normalizedLyrics,
                     newTrackNumber = song.trackNumber,
+                    newDiscNumber = song.discNumber,
                     coverArtUpdate = coverArtUpdate
                 )
             }.getOrNull()?.updatedAlbumArtUri

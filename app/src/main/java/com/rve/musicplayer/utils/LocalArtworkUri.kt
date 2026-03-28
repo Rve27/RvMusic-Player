@@ -5,6 +5,7 @@ object LocalArtworkUri {
     private const val HOST_SONG = "song"
 
     fun buildSongUri(songId: Long): String = "$SCHEME://$HOST_SONG/$songId"
+    fun buildSongUriWithTimestamp(songId: Long): String = buildSongUri(songId) + "?t=${System.currentTimeMillis()}"
 
     fun isLocalArtworkUri(uriString: String?): Boolean {
         return uriString?.startsWith("$SCHEME://") == true
@@ -50,7 +51,11 @@ object LocalArtworkUri {
         }
 
         return if (isLocalArtworkUri(normalizedStoredUri) || looksLikeVolatileArtworkUri(normalizedStoredUri)) {
-            buildSongUri(songId)
+            if (normalizedStoredUri.contains("?t=")) {
+                normalizedStoredUri
+            } else {
+                buildSongUri(songId)
+            }
         } else {
             normalizedStoredUri
         }
