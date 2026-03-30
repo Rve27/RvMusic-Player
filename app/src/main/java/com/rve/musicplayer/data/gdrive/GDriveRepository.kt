@@ -410,6 +410,7 @@ class GDriveRepository @Inject constructor(
                     artistName = primaryArtistName,
                     artistId = primaryArtistId,
                     songCount = 0,
+                    dateAdded = gdriveSong.dateAdded,
                     year = 0,
                     albumArtUriString = gdriveSong.albumArtUrl
                 )

@@ -641,6 +641,7 @@ class NavidromeRepository @Inject constructor(
                     artistName = primaryArtistName,
                     artistId = primaryArtistId,
                     songCount = 0,
+                    dateAdded = navidromeSong.dateAdded,
                     year = navidromeSong.year,
                     albumArtUriString = getCoverArtUrl(navidromeSong.coverArtId)
                 )

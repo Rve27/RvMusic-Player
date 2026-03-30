@@ -131,7 +131,8 @@ object AppModule {
             PixelPlayDatabase.MIGRATION_28_29,
             PixelPlayDatabase.MIGRATION_29_30,
             PixelPlayDatabase.MIGRATION_30_31,
-            PixelPlayDatabase.MIGRATION_31_32
+            PixelPlayDatabase.MIGRATION_31_32,
+            PixelPlayDatabase.MIGRATION_32_33
         )
             .addCallback(
                 object : RoomDatabase.Callback() {

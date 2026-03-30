@@ -261,4 +261,9 @@ interface MusicRepository {
         sortOption: com.rve.musicplayer.data.model.SortOption,
         storageFilter: com.rve.musicplayer.data.model.StorageFilter
     ): List<Long>
+
+    suspend fun getFavoriteSongIdsSorted(
+        sortOption: com.rve.musicplayer.data.model.SortOption,
+        storageFilter: com.rve.musicplayer.data.model.StorageFilter
+    ): List<Long>
 }

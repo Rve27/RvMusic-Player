@@ -18,6 +18,8 @@ import com.rve.musicplayer.data.model.SortOption // Added import
 import com.rve.musicplayer.data.model.FolderSource
 import com.rve.musicplayer.data.model.LyricsSourcePreference
 import com.rve.musicplayer.data.model.TransitionSettings
+import com.rve.musicplayer.data.equalizer.EqualizerPreset // Added import
+import com.rve.musicplayer.data.model.StorageFilter
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -44,7 +46,7 @@ object AppThemeMode {
  * Album art quality settings for developer options.
  * Controls maximum resolution for album artwork in player view.
  * Thumbnails in lists always use low resolution for performance.
- * 
+ *
  * @property maxSize Maximum size in pixels (0 = original size)
  * @property label Human-readable label for UI
  */
@@ -95,6 +97,7 @@ constructor(
         // UI State Keys
         val LAST_LIBRARY_TAB_INDEX =
                 intPreferencesKey("last_library_tab_index") // Corrected: Add intPreferencesKey here
+        val LAST_STORAGE_FILTER = stringPreferencesKey("last_storage_filter")
         val MOCK_GENRES_ENABLED = booleanPreferencesKey("mock_genres_enabled")
         val LAST_DAILY_MIX_UPDATE = longPreferencesKey("last_daily_mix_update")
         val DAILY_MIX_SONG_IDS = stringPreferencesKey("daily_mix_song_ids")
@@ -111,6 +114,7 @@ constructor(
         val IS_FOLDER_FILTER_ACTIVE = booleanPreferencesKey("is_folder_filter_active")
         val IS_FOLDERS_PLAYLIST_VIEW = booleanPreferencesKey("is_folders_playlist_view")
         val SHOW_TELEGRAM_CLOUD_PLAYLISTS = booleanPreferencesKey("show_telegram_cloud_playlists")
+        val TELEGRAM_TOPIC_DISPLAY_MODE = stringPreferencesKey("telegram_topic_display_mode")
         val FOLDERS_SOURCE = stringPreferencesKey("folders_source")
         val FOLDER_BACK_GESTURE_NAVIGATION = booleanPreferencesKey("folder_back_gesture_navigation")
         val USE_SMOOTH_CORNERS = booleanPreferencesKey("use_smooth_corners")
@@ -156,13 +160,13 @@ constructor(
         val VIRTUALIZER_ENABLED = booleanPreferencesKey("virtualizer_enabled")
         val LOUDNESS_ENHANCER_ENABLED = booleanPreferencesKey("loudness_enhancer_enabled")
         val LOUDNESS_ENHANCER_STRENGTH = intPreferencesKey("loudness_enhancer_strength")
-        
+
         // Dismissed Warning States
         val BASS_BOOST_DISMISSED = booleanPreferencesKey("bass_boost_dismissed")
         val VIRTUALIZER_DISMISSED = booleanPreferencesKey("virtualizer_dismissed")
         val LOUDNESS_DISMISSED = booleanPreferencesKey("loudness_dismissed")
         val BACKUP_INFO_DISMISSED = booleanPreferencesKey("backup_info_dismissed")
-        
+
         // View Mode
         // val IS_GRAPH_VIEW = booleanPreferencesKey("is_graph_view") // Deprecated
         val VIEW_MODE = stringPreferencesKey("equalizer_view_mode")
@@ -170,20 +174,20 @@ constructor(
         // Custom Presets
         val CUSTOM_PRESETS = stringPreferencesKey("custom_presets_json") // List<EqualizerPreset>
         val PINNED_PRESETS = stringPreferencesKey("pinned_presets_json") // List<String> (names)
-        
+
         // Library Sync
         val LAST_SYNC_TIMESTAMP = longPreferencesKey("last_sync_timestamp")
         val DIRECTORY_RULES_VERSION = intPreferencesKey("directory_rules_version")
         val LAST_APPLIED_DIRECTORY_RULES_VERSION =
             intPreferencesKey("last_applied_directory_rules_version")
-        
+
         // Lyrics Sync Offset per song (Map<songId, offsetMs> as JSON)
         val LYRICS_SYNC_OFFSETS = stringPreferencesKey("lyrics_sync_offsets_json")
-        
+
         // Lyrics Source Preference
         val LYRICS_SOURCE_PREFERENCE = stringPreferencesKey("lyrics_source_preference")
         val AUTO_SCAN_LRC_FILES = booleanPreferencesKey("auto_scan_lrc_files")
-        
+
         // Developer Options
         val ALBUM_ART_QUALITY = stringPreferencesKey("album_art_quality")
         val TAP_BACKGROUND_CLOSES_PLAYER = booleanPreferencesKey("tap_background_closes_player")
@@ -193,10 +197,10 @@ constructor(
         val USE_ANIMATED_LYRICS = booleanPreferencesKey("use_animated_lyrics")
         val ANIMATED_LYRICS_BLUR_ENABLED = booleanPreferencesKey("animated_lyrics_blur_enabled")
         val ANIMATED_LYRICS_BLUR_STRENGTH = androidx.datastore.preferences.core.floatPreferencesKey("animated_lyrics_blur_strength")
-        
+
         // Genre View Preference
         val IS_GENRE_GRID_VIEW = booleanPreferencesKey("is_genre_grid_view")
-        
+
         // Album View Preference
         val IS_ALBUMS_LIST_VIEW = booleanPreferencesKey("is_albums_list_view")
 
@@ -297,7 +301,7 @@ constructor(
         dataStore.edit { preferences ->
             val currentGenres = preferences[PreferencesKeys.CUSTOM_GENRES] ?: emptySet()
             preferences[PreferencesKeys.CUSTOM_GENRES] = currentGenres + genre
-            
+
             if (iconResId != null) {
                 val currentIconsJson = preferences[PreferencesKeys.CUSTOM_GENRE_ICONS]
                 val currentIcons = if (currentIconsJson != null) {
@@ -309,7 +313,7 @@ constructor(
                 } else {
                     emptyMap()
                 }
-                
+
                 val newIcons = currentIcons.toMutableMap()
                 newIcons[genre] = iconResId
                 preferences[PreferencesKeys.CUSTOM_GENRE_ICONS] = json.encodeToString(newIcons)
@@ -422,7 +426,7 @@ constructor(
     }
 
     // ===== Library Sync Settings =====
-    
+
     val lastSyncTimestampFlow: Flow<Long> =
             dataStore.data.map { preferences ->
                 preferences[PreferencesKeys.LAST_SYNC_TIMESTAMP] ?: 0L
@@ -465,7 +469,7 @@ constructor(
     // ===== End Library Sync Settings =====
 
     // ===== Lyrics Sync Offset Settings =====
-    
+
     /**
      * Lyrics sync offset per song in milliseconds.
      * Stored as a JSON map: { "songId": offsetMs, ... }
@@ -500,13 +504,13 @@ constructor(
                     mutableMapOf()
                 }
             } ?: mutableMapOf()
-            
+
             if (offsetMs == 0) {
                 currentOffsets.remove(songId) // Don't store default value
             } else {
                 currentOffsets[songId] = offsetMs
             }
-            
+
             preferences[PreferencesKeys.LYRICS_SYNC_OFFSETS] = json.encodeToString(currentOffsets)
         }
     }
@@ -514,7 +518,7 @@ constructor(
     // ===== End Lyrics Sync Offset Settings =====
 
     // ===== Lyrics Source Preference Settings =====
-    
+
     val lyricsSourcePreferenceFlow: Flow<LyricsSourcePreference> =
             dataStore.data.map { preferences ->
                 LyricsSourcePreference.fromName(preferences[PreferencesKeys.LYRICS_SOURCE_PREFERENCE])
@@ -763,7 +767,7 @@ constructor(
             val delayMetadata = preferences[PreferencesKeys.FULL_PLAYER_DELAY_METADATA] ?: true
             val delayProgress = preferences[PreferencesKeys.FULL_PLAYER_DELAY_PROGRESS] ?: true
             val delayControls = preferences[PreferencesKeys.FULL_PLAYER_DELAY_CONTROLS] ?: true
-            
+
             val delayAll = delayAlbum && delayMetadata && delayProgress && delayControls
 
             FullPlayerLoadingTweaks(
@@ -1112,6 +1116,21 @@ constructor(
         }
     }
 
+    val lastStorageFilterFlow: Flow<StorageFilter> =
+        dataStore.data.map { preferences ->
+            when (preferences[PreferencesKeys.LAST_STORAGE_FILTER]) {
+                "ONLINE"  -> StorageFilter.ONLINE
+                "OFFLINE" -> StorageFilter.OFFLINE
+                else      -> StorageFilter.ALL
+            }
+        }
+
+    suspend fun saveLastStorageFilter(filter: StorageFilter) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LAST_STORAGE_FILTER] = filter.name
+        }
+    }
+
     val mockGenresEnabledFlow: Flow<Boolean> =
             dataStore.data.map { preferences ->
                 preferences[PreferencesKeys.MOCK_GENRES_ENABLED] ?: false // Default to false
@@ -1197,7 +1216,7 @@ constructor(
     suspend fun setDelayAllFullPlayerContent(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.FULL_PLAYER_DELAY_ALL] = enabled
-            
+
             preferences[PreferencesKeys.FULL_PLAYER_DELAY_ALBUM] = enabled
             preferences[PreferencesKeys.FULL_PLAYER_DELAY_METADATA] = enabled
             preferences[PreferencesKeys.FULL_PLAYER_DELAY_PROGRESS] = enabled
@@ -1369,6 +1388,11 @@ constructor(
             preferences[PreferencesKeys.SHOW_TELEGRAM_CLOUD_PLAYLISTS] ?: true
         }
 
+    val telegramTopicDisplayModeFlow: Flow<TelegramTopicDisplayMode> = dataStore.data
+        .map { preferences ->
+            TelegramTopicDisplayMode.fromStorageKey(preferences[PreferencesKeys.TELEGRAM_TOPIC_DISPLAY_MODE])
+        }
+
     val foldersSourceFlow: Flow<FolderSource> = dataStore.data
         .map { preferences ->
             FolderSource.fromStorageKey(preferences[PreferencesKeys.FOLDERS_SOURCE])
@@ -1402,6 +1426,12 @@ constructor(
         }
     }
 
+    suspend fun setTelegramTopicDisplayMode(mode: TelegramTopicDisplayMode) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.TELEGRAM_TOPIC_DISPLAY_MODE] = mode.storageKey
+        }
+    }
+
     suspend fun setFoldersSource(source: FolderSource) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.FOLDERS_SOURCE] = source.storageKey
@@ -1415,7 +1445,7 @@ constructor(
     }
 
     // ===== Developer Options =====
-    
+
     /**
      * Album art quality for player view.
      * Controls the maximum resolution for album artwork displayed in the full player.
@@ -1424,8 +1454,8 @@ constructor(
     val albumArtQualityFlow: Flow<AlbumArtQuality> =
         dataStore.data.map { preferences ->
             preferences[PreferencesKeys.ALBUM_ART_QUALITY]
-                ?.let { 
-                    try { AlbumArtQuality.valueOf(it) } 
+                ?.let {
+                    try { AlbumArtQuality.valueOf(it) }
                     catch (e: Exception) { AlbumArtQuality.ORIGINAL }
                 }
                 ?: AlbumArtQuality.ORIGINAL

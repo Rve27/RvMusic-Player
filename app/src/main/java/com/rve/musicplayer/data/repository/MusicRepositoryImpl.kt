@@ -789,4 +789,22 @@ class MusicRepositoryImpl @Inject constructor(
             filterMode = filterMode
         )
     }
+
+    override suspend fun getFavoriteSongIdsSorted(
+        sortOption: SortOption,
+        storageFilter: com.rve.musicplayer.data.model.StorageFilter
+    ): List<Long> = withContext(Dispatchers.IO) {
+        val allowedDirsFlow = userPreferencesRepository.allowedDirectoriesFlow.first()
+        val blockedDirsFlow = userPreferencesRepository.blockedDirectoriesFlow.first()
+        val (allowedParentDirs, applyFilter) = computeAllowedDirs(allowedDirsFlow, blockedDirsFlow)
+
+        val filterMode = storageFilter.toFilterMode()
+
+        musicDao.getFavoriteSongIdsSorted(
+            allowedParentDirs = allowedParentDirs,
+            applyDirectoryFilter = applyFilter,
+            sortOrder = sortOption.storageKey,
+            filterMode = filterMode
+        )
+    }
 }

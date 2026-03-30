@@ -23,6 +23,7 @@ data class AlbumEntity(
     @ColumnInfo(name = "artist_id") val artistId: Long, // ID del artista principal del álbum (si aplica)
     @ColumnInfo(name = "album_art_uri_string") val albumArtUriString: String?,
     @ColumnInfo(name = "song_count") val songCount: Int,
+    @ColumnInfo(name = "date_added") val dateAdded: Long,
     @ColumnInfo(name = "year") val year: Int
 )
 
@@ -46,6 +47,7 @@ fun AlbumEntity.toAlbum(): Album {
         artist = this.artistName.normalizeMetadataTextOrEmpty(),
         albumArtUriString = effectiveAlbumArtUri,
         songCount = this.songCount,
+        dateAdded = this.dateAdded,
         year = this.year
     )
 }
@@ -62,6 +64,7 @@ fun Album.toEntity(artistIdForAlbum: Long): AlbumEntity { // Necesitamos pasar e
         artistId = artistIdForAlbum, // Asignar el ID del artista
         albumArtUriString = this.albumArtUriString,
         songCount = this.songCount,
+        dateAdded = this.dateAdded,
         year = this.year
     )
 }

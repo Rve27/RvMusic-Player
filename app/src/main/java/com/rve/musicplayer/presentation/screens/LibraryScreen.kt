@@ -223,6 +223,7 @@ private const val FOLDER_NAVIGATION_ROOT_KEY = "__folder_root__"
 private const val FOLDER_NAVIGATION_FORWARD = 1
 private const val FOLDER_NAVIGATION_BACKWARD = -1
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun WatchTransferProgressDialog(
     transfer: PhoneWatchTransferState,
@@ -597,8 +598,8 @@ fun LibraryScreen(
     val canHandleFolderBack by remember {
         derivedStateOf {
             currentTabId == LibraryTabId.FOLDERS &&
-                canNavigateBackInFolders &&
-                !isSortSheetVisible
+                    canNavigateBackInFolders &&
+                    !isSortSheetVisible
         }
     }
 
@@ -740,7 +741,7 @@ fun LibraryScreen(
             Column(
                 modifier = Modifier.background(headerContainerColor)
             ) {
-            TopAppBar(
+                TopAppBar(
                     title = {
                         if (isCompactNavigation) {
                             LibraryNavigationPill(
@@ -957,12 +958,49 @@ fun LibraryScreen(
                         val playlistUiState by playlistViewModel.uiState.collectAsStateWithLifecycle()
                         val visiblePlaylists = remember(
                             playlistUiState.playlists,
-                            playlistUiState.showTelegramCloudPlaylists
+                            playlistUiState.showTelegramCloudPlaylists,
+                            playlistUiState.telegramTopicDisplayMode
                         ) {
-                            if (playlistUiState.showTelegramCloudPlaylists) {
-                                playlistUiState.playlists
-                            } else {
-                                playlistUiState.playlists.filterNot { it.source == "TELEGRAM" }
+                            val mode = playlistUiState.telegramTopicDisplayMode
+                            val allPlaylists = playlistUiState.playlists
+
+                            // When Telegram cloud is hidden, remove all Telegram playlists
+                            if (!playlistUiState.showTelegramCloudPlaylists) {
+                                return@remember allPlaylists.filterNot {
+                                    it.source == "TELEGRAM" || it.source == "TELEGRAM_TOPIC"
+                                }
+                            }
+
+                            allPlaylists.filter { playlist ->
+                                when (playlist.source) {
+                                    "TELEGRAM_TOPIC" -> when (mode) {
+                                        com.rve.musicplayer.data.preferences.TelegramTopicDisplayMode.CHANNELS_ONLY ->
+                                            false
+                                        com.rve.musicplayer.data.preferences.TelegramTopicDisplayMode.TOPICS_ONLY,
+                                        com.rve.musicplayer.data.preferences.TelegramTopicDisplayMode.CHANNELS_AND_TOPICS ->
+                                            playlist.songIds.isNotEmpty()
+                                    }
+                                    "TELEGRAM" -> when (mode) {
+                                        com.rve.musicplayer.data.preferences.TelegramTopicDisplayMode.CHANNELS_ONLY ->
+                                            true
+                                        com.rve.musicplayer.data.preferences.TelegramTopicDisplayMode.TOPICS_ONLY -> {
+                                            // Hide combined playlist only for forum channels
+                                            // (those that have at least one topic playlist)
+                                            val chatId = playlist.id
+                                                .removePrefix("telegram_channel:")
+                                                .toLongOrNull()
+                                            if (chatId != null) {
+                                                allPlaylists.none { p ->
+                                                    p.source == "TELEGRAM_TOPIC" &&
+                                                            p.id.startsWith("telegram_topic:${chatId}_")
+                                                }
+                                            } else true
+                                        }
+                                        com.rve.musicplayer.data.preferences.TelegramTopicDisplayMode.CHANNELS_AND_TOPICS ->
+                                            true
+                                    }
+                                    else -> true
+                                }
                             }
                         }
                         val allSongsLazyPagingItems = libraryViewModel.songsPagingFlow.collectAsLazyPagingItems()
@@ -986,7 +1024,7 @@ fun LibraryScreen(
                             if (playlistUiState.showTelegramCloudPlaylists) return@LaunchedEffect
 
                             selectedPlaylists
-                                .filter { it.source == "TELEGRAM" }
+                                .filter { it.source == "TELEGRAM" || it.source == "TELEGRAM_TOPIC" }
                                 .forEach { playlist ->
                                     playlistMultiSelectionState.removeFromSelection(playlist.id)
                                 }
@@ -1129,10 +1167,10 @@ fun LibraryScreen(
                                     onNavigateBack = { playerViewModel.navigateBackFolder() },
                                     isShuffleEnabled = isShuffleEnabled,
                                     showStorageFilterButton = currentTabId == LibraryTabId.SONGS ||
-                                        currentTabId == LibraryTabId.ALBUMS ||
-                                        currentTabId == LibraryTabId.ARTISTS ||
-                                        currentTabId == LibraryTabId.LIKED ||
-                                        (ENABLE_FOLDERS_STORAGE_FILTER && currentTabId == LibraryTabId.FOLDERS),
+                                            currentTabId == LibraryTabId.ALBUMS ||
+                                            currentTabId == LibraryTabId.ARTISTS ||
+                                            currentTabId == LibraryTabId.LIKED ||
+                                            (ENABLE_FOLDERS_STORAGE_FILTER && currentTabId == LibraryTabId.FOLDERS),
                                     currentStorageFilter = playerUiState.currentStorageFilter,
                                     onStorageFilterClick = { playerViewModel.toggleStorageFilter() }
                                 )
@@ -1162,6 +1200,9 @@ fun LibraryScreen(
                                 onOptionSelected = { option ->
                                     onSortOptionChanged(option)
                                     playerViewModel.hideSortingSheet()
+                                },
+                                onDirectionToggle = { option ->
+                                    onSortOptionChanged(option)
                                 },
                                 showViewToggle = isFoldersTab || isPlaylistsTab,
                                 viewSectionTitle = if (isPlaylistsTab) "Cloud" else "View",
@@ -1267,6 +1308,41 @@ fun LibraryScreen(
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 modifier = Modifier.padding(top = 8.dp, start = 2.dp)
                                             )
+                                        }
+                                    }
+                                } else null,
+                                extraContent = if (isPlaylistsTab && playlistUiState.showTelegramCloudPlaylists) {
+                                    {
+                                        Text(
+                                            text = "Topics Display",
+                                            style = MaterialTheme.typography.headlineSmall,
+                                            fontFamily = com.rve.musicplayer.ui.theme.GoogleSansRounded,
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                            modifier = Modifier.padding(start = 2.dp, bottom = 8.dp)
+                                        )
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(48.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            listOf(
+                                                com.rve.musicplayer.data.preferences.TelegramTopicDisplayMode.CHANNELS_ONLY to "Channels",
+                                                com.rve.musicplayer.data.preferences.TelegramTopicDisplayMode.TOPICS_ONLY to "Topics",
+                                                com.rve.musicplayer.data.preferences.TelegramTopicDisplayMode.CHANNELS_AND_TOPICS to "Both"
+                                            ).forEach { (mode, label) ->
+                                                ToggleSegmentButton(
+                                                    modifier = Modifier.weight(1f),
+                                                    active = playlistUiState.telegramTopicDisplayMode == mode,
+                                                    activeColor = MaterialTheme.colorScheme.primary,
+                                                    inactiveColor = MaterialTheme.colorScheme.surfaceVariant,
+                                                    activeContentColor = MaterialTheme.colorScheme.onPrimary,
+                                                    inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    activeCornerRadius = 32.dp,
+                                                    onClick = { playlistViewModel.setTelegramTopicDisplayMode(mode) },
+                                                    text = label
+                                                )
+                                            }
                                         }
                                     }
                                 } else null
@@ -1511,9 +1587,9 @@ fun LibraryScreen(
                 } else if (
                     playerUiState.isSyncingLibrary ||
                     (
-                        (playerUiState.isLoadingInitialSongs || playerUiState.isLoadingLibraryCategories) &&
-                            isLibraryContentEmpty
-                        )
+                            (playerUiState.isLoadingInitialSongs || playerUiState.isLoadingLibraryCategories) &&
+                                    isLibraryContentEmpty
+                            )
                 ) {
                     // P1-1: LibrarySyncOverlay reads syncProgress internally so that sync progress
                     // ticks don't trigger recomposition of the entire LibraryScreen.
@@ -1839,9 +1915,9 @@ fun LibraryScreen(
     // Merge Playlists Dialog
     if (showMergePlaylistDialog && pendingMergePlaylistIds.isNotEmpty()) {
         var mergePlaylistName by remember { mutableStateOf("") }
-        
+
         AlertDialog(
-            onDismissRequest = { 
+            onDismissRequest = {
                 showMergePlaylistDialog = false
                 pendingMergePlaylistIds = emptyList()
                 mergePlaylistName = ""
@@ -1885,7 +1961,7 @@ fun LibraryScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { 
+                TextButton(onClick = {
                     showMergePlaylistDialog = false
                     pendingMergePlaylistIds = emptyList()
                     mergePlaylistName = ""
@@ -2020,8 +2096,8 @@ fun LibraryNavigationPill(
     )
     val targetArrowHorizontalPadding =
         LibraryNavigationPillArrowPaddingExpanded -
-            (LibraryNavigationPillArrowPaddingExpanded - LibraryNavigationPillArrowPaddingCompressed) *
-            compressionProgress
+                (LibraryNavigationPillArrowPaddingExpanded - LibraryNavigationPillArrowPaddingCompressed) *
+                compressionProgress
     val animatedArrowHorizontalPadding by animateDpAsState(
         targetValue = targetArrowHorizontalPadding,
         label = "LibraryPillArrowPadding"
@@ -2054,34 +2130,34 @@ fun LibraryNavigationPill(
         }
         val maxTitleWidth = (availableWidth - targetArrowWidth - pillGap - 40.dp).coerceAtLeast(0.dp)
         val idealTitleWidth = idealTextWidth +
-            titleHorizontalPadding * 2 +
-            (if (showIcon) (titleIconSize + titleIconSpacing) else 0.dp) +
-            4.dp // Tiny safety buffer
+                titleHorizontalPadding * 2 +
+                (if (showIcon) (titleIconSize + titleIconSpacing) else 0.dp) +
+                4.dp // Tiny safety buffer
         val naturalTitleWidth = minOf(idealTitleWidth, maxTitleWidth)
         val minCompressedTitleWidth = (
-            titleHorizontalPadding * 2 +
-                titleIconSize +
-                titleIconSpacing +
-                LibraryNavigationPillMinimumTextWidth
-            ).coerceAtMost(maxTitleWidth)
+                titleHorizontalPadding * 2 +
+                        titleIconSize +
+                        titleIconSpacing +
+                        LibraryNavigationPillMinimumTextWidth
+                ).coerceAtMost(maxTitleWidth)
         val forcedCompressionWidth = minOf(
             LibraryNavigationPillForcedCompressionWidth,
             (naturalTitleWidth - minCompressedTitleWidth).coerceAtLeast(0.dp),
         )
         val targetTitleWidth = (
-            naturalTitleWidth - (forcedCompressionWidth * compressionProgress)
-            ).coerceAtLeast(minCompressedTitleWidth)
+                naturalTitleWidth - (forcedCompressionWidth * compressionProgress)
+                ).coerceAtLeast(minCompressedTitleWidth)
         val widthCompressionRatio = if (idealTitleWidth.value > 0f) {
             (targetTitleWidth.value / idealTitleWidth.value).coerceIn(0f, 1f)
         } else {
             1f
         }
         val widthAxisBySpace = LibraryNavigationPillTitleWidthMin +
-            (LibraryNavigationPillTitleWidthMax - LibraryNavigationPillTitleWidthMin) *
-            widthCompressionRatio.coerceIn(0f, 1f)
+                (LibraryNavigationPillTitleWidthMax - LibraryNavigationPillTitleWidthMin) *
+                widthCompressionRatio.coerceIn(0f, 1f)
         val forcedWidthAxis = LibraryNavigationPillTitleWidthMax -
-            (LibraryNavigationPillTitleWidthMax - LibraryNavigationPillCompressedWidthAxis) *
-            compressionProgress
+                (LibraryNavigationPillTitleWidthMax - LibraryNavigationPillCompressedWidthAxis) *
+                compressionProgress
         val targetWidthAxis = minOf(widthAxisBySpace, forcedWidthAxis)
         val animatedTitleWidth by animateDpAsState(
             targetValue = targetTitleWidth,
@@ -2133,18 +2209,18 @@ fun LibraryNavigationPill(
                                 diff == 0 -> 0
                                 // If the absolute difference is very large, it's likely a wrap-around or a direct jump
                                 // We treat jumps as "forward" if positive, but we could also check a threshold
-                                abs(diff) > 1 -> diff.coerceIn(-1, 1) 
+                                abs(diff) > 1 -> diff.coerceIn(-1, 1)
                                 else -> diff
                             }
-                            
-                            val slideIn = slideInHorizontally { fullWidth -> 
-                                if (direction >= 0) fullWidth else -fullWidth 
+
+                            val slideIn = slideInHorizontally { fullWidth ->
+                                if (direction >= 0) fullWidth else -fullWidth
                             } + fadeIn(animationSpec = tween(220))
-                            
-                            val slideOut = slideOutHorizontally { fullWidth -> 
-                                if (direction >= 0) -fullWidth else fullWidth 
+
+                            val slideOut = slideOutHorizontally { fullWidth ->
+                                if (direction >= 0) -fullWidth else fullWidth
                             } + fadeOut(animationSpec = tween(220))
-                            
+
                             slideIn.togetherWith(slideOut)
                         },
                         label = "LibraryPillTitle"
@@ -2179,7 +2255,7 @@ fun LibraryNavigationPill(
                                     Spacer(modifier = Modifier.width(titleIconSpacing))
                                 }
                             }
-            Text(
+                            Text(
                                 modifier = Modifier
                                     .weight(1f, fill = false)
                                     .padding(end = 4.dp), // Add slight end padding for safety
@@ -2810,28 +2886,53 @@ private fun flattenFolders(folders: List<MusicFolder>): List<MusicFolder> {
 
 private fun sortMusicFoldersByOption(folders: List<MusicFolder>, sortOption: SortOption): List<MusicFolder> {
     return when (sortOption) {
-        SortOption.FolderNameAZ -> folders.sortedBy { it.name.lowercase() }
-        SortOption.FolderNameZA -> folders.sortedByDescending { it.name.lowercase() }
+        SortOption.FolderNameAZ -> folders.sortedWith(
+            compareBy<MusicFolder> { it.name.lowercase() }
+                .thenBy { it.path }
+        )
+        SortOption.FolderNameZA -> folders.sortedWith(
+            compareByDescending<MusicFolder> { it.name.lowercase() }
+                .thenBy { it.path }
+        )
         SortOption.FolderSongCountAsc -> folders.sortedWith(
-            compareBy<MusicFolder> { it.totalSongCount }.thenBy { it.name.lowercase() }
+            compareBy<MusicFolder> { it.totalSongCount }
+                .thenBy { it.name.lowercase() }
+                .thenBy { it.path }
         )
         SortOption.FolderSongCountDesc -> folders.sortedWith(
-            compareByDescending<MusicFolder> { it.totalSongCount }.thenBy { it.name.lowercase() }
+            compareByDescending<MusicFolder> { it.totalSongCount }
+                .thenBy { it.name.lowercase() }
+                .thenBy { it.path }
         )
         SortOption.FolderSubdirCountAsc -> folders.sortedWith(
-            compareBy<MusicFolder> { it.totalSubFolderCount }.thenBy { it.name.lowercase() }
+            compareBy<MusicFolder> { it.totalSubFolderCount }
+                .thenBy { it.name.lowercase() }
+                .thenBy { it.path }
         )
         SortOption.FolderSubdirCountDesc -> folders.sortedWith(
-            compareByDescending<MusicFolder> { it.totalSubFolderCount }.thenBy { it.name.lowercase() }
+            compareByDescending<MusicFolder> { it.totalSubFolderCount }
+                .thenBy { it.name.lowercase() }
+                .thenBy { it.path }
         )
-        else -> folders.sortedBy { it.name.lowercase() }
+        else -> folders.sortedWith(
+            compareBy<MusicFolder> { it.name.lowercase() }
+                .thenBy { it.path }
+        )
     }
 }
 
 private fun sortSongsForFolderView(songs: List<Song>, sortOption: SortOption): List<Song> {
     return when (sortOption) {
-        SortOption.FolderNameZA -> songs.sortedByDescending { it.title.lowercase() }
-        else -> songs.sortedBy { it.title.lowercase() }
+        SortOption.FolderNameZA -> songs.sortedWith(
+            compareByDescending<Song> { it.title.lowercase() }
+                .thenBy { it.artist.lowercase() }
+                .thenBy { it.id }
+        )
+        else -> songs.sortedWith(
+            compareBy<Song> { it.title.lowercase() }
+                .thenBy { it.artist.lowercase() }
+                .thenBy { it.id }
+        )
     }
 }
 
@@ -2900,7 +3001,9 @@ fun AlbumGridItemRedesigned(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp)
+                        .height(84.dp)
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.Center
                 ) {
                     ShimmerBox(
                         modifier = Modifier
@@ -3003,7 +3106,9 @@ fun AlbumGridItemRedesigned(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp)
+                            .height(84.dp)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.Center
                     ) {
                         Text(
                             album.title,

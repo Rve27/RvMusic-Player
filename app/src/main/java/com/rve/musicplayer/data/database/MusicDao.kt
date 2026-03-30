@@ -459,13 +459,61 @@ interface MusicDao {
             CASE WHEN :sortOrder = 'song_title_az' THEN title END ASC,
             CASE WHEN :sortOrder = 'song_title_za' THEN title END DESC,
             CASE WHEN :sortOrder = 'song_artist' THEN artist_name END ASC,
+            CASE WHEN :sortOrder = 'song_artist_desc' THEN artist_name END DESC,
             CASE WHEN :sortOrder = 'song_album' THEN album_name END ASC,
+            CASE WHEN :sortOrder = 'song_album_desc' THEN album_name END DESC,
             CASE WHEN :sortOrder = 'song_date_added' THEN date_added END DESC,
+            CASE WHEN :sortOrder = 'song_date_added_asc' THEN date_added END ASC,
             CASE WHEN :sortOrder = 'song_duration' THEN duration END DESC,
-            
-            title ASC
+            CASE WHEN :sortOrder = 'song_duration_asc' THEN duration END ASC,
+            title ASC,
+            id ASC
     """)
     suspend fun getSongIdsSorted(
+        allowedParentDirs: List<String>,
+        applyDirectoryFilter: Boolean,
+        sortOrder: String,
+        filterMode: Int
+    ): List<Long>
+
+    @Query("""
+        SELECT songs.id FROM songs
+        INNER JOIN favorites ON songs.id = favorites.songId AND favorites.isFavorite = 1
+        WHERE (:applyDirectoryFilter = 0 OR songs.parent_directory_path IN (:allowedParentDirs))
+        AND (
+            :filterMode = 0
+            OR (
+                :filterMode = 1
+                AND songs.content_uri_string NOT LIKE 'telegram://%'
+                AND songs.content_uri_string NOT LIKE 'netease://%'
+                AND songs.content_uri_string NOT LIKE 'gdrive://%'
+                AND songs.content_uri_string NOT LIKE 'qqmusic://%'
+                AND songs.content_uri_string NOT LIKE 'navidrome://%'
+            )
+            OR (
+                :filterMode = 2
+                AND (
+                    songs.content_uri_string LIKE 'telegram://%'
+                    OR songs.content_uri_string LIKE 'netease://%'
+                    OR songs.content_uri_string LIKE 'gdrive://%'
+                    OR songs.content_uri_string LIKE 'qqmusic://%'
+                    OR songs.content_uri_string LIKE 'navidrome://%'
+                )
+            )
+        )
+        ORDER BY
+            CASE WHEN :sortOrder = 'liked_title_az' THEN songs.title END ASC,
+            CASE WHEN :sortOrder = 'liked_title_za' THEN songs.title END DESC,
+            CASE WHEN :sortOrder = 'liked_artist' THEN songs.artist_name END ASC,
+            CASE WHEN :sortOrder = 'liked_artist_desc' THEN songs.artist_name END DESC,
+            CASE WHEN :sortOrder = 'liked_album' THEN songs.album_name END ASC,
+            CASE WHEN :sortOrder = 'liked_album_desc' THEN songs.album_name END DESC,
+            CASE WHEN :sortOrder = 'liked_date_liked' THEN favorites.timestamp END DESC,
+            CASE WHEN :sortOrder = 'liked_date_liked_asc' THEN favorites.timestamp END ASC,
+            songs.title ASC,
+            songs.id ASC
+    """)
+    suspend fun getFavoriteSongIdsSorted(
         allowedParentDirs: List<String>,
         applyDirectoryFilter: Boolean,
         sortOrder: String,
@@ -506,12 +554,17 @@ interface MusicDao {
             CASE WHEN :sortOrder = 'song_title_az' THEN title END ASC,
             CASE WHEN :sortOrder = 'song_title_za' THEN title END DESC,
             CASE WHEN :sortOrder = 'song_artist' THEN artist_name END ASC,
+            CASE WHEN :sortOrder = 'song_artist_desc' THEN artist_name END DESC,
             CASE WHEN :sortOrder = 'song_album' THEN album_name END ASC,
+            CASE WHEN :sortOrder = 'song_album_desc' THEN album_name END DESC,
             CASE WHEN :sortOrder = 'song_date_added' THEN date_added END DESC,
+            CASE WHEN :sortOrder = 'song_date_added_asc' THEN date_added END ASC,
             CASE WHEN :sortOrder = 'song_duration' THEN duration END DESC,
-            
+            CASE WHEN :sortOrder = 'song_duration_asc' THEN duration END ASC,
+
             -- Secondary sort falls back to title for consistency
-            title ASC
+            title ASC,
+            id ASC
     """)
     fun getSongsPaginated(
         allowedParentDirs: List<String>,
@@ -554,9 +607,13 @@ interface MusicDao {
             CASE WHEN :sortOrder = 'liked_title_az' THEN songs.title END ASC,
             CASE WHEN :sortOrder = 'liked_title_za' THEN songs.title END DESC,
             CASE WHEN :sortOrder = 'liked_artist' THEN songs.artist_name END ASC,
+            CASE WHEN :sortOrder = 'liked_artist_desc' THEN songs.artist_name END DESC,
             CASE WHEN :sortOrder = 'liked_album' THEN songs.album_name END ASC,
+            CASE WHEN :sortOrder = 'liked_album_desc' THEN songs.album_name END DESC,
             CASE WHEN :sortOrder = 'liked_date_liked' THEN favorites.timestamp END DESC,
-            songs.title ASC
+            CASE WHEN :sortOrder = 'liked_date_liked_asc' THEN favorites.timestamp END ASC,
+            songs.title ASC,
+            songs.id ASC
     """)
     fun getFavoriteSongsPaginated(
         allowedParentDirs: List<String>,
@@ -694,6 +751,7 @@ interface MusicDao {
             albums.artist_id AS artist_id,
             albums.album_art_uri_string AS album_art_uri_string,
             COUNT(songs.id) AS song_count,
+            albums.date_added AS date_added,
             albums.year AS year
         FROM albums
         INNER JOIN songs ON albums.id = songs.album_id
@@ -725,6 +783,7 @@ interface MusicDao {
             albums.artist_name,
             albums.artist_id,
             albums.album_art_uri_string,
+            albums.date_added,
             albums.year
         ORDER BY albums.title ASC
     """)
@@ -746,6 +805,7 @@ interface MusicDao {
                 FROM songs
                 WHERE songs.album_id = albums.id
             ) AS song_count,
+            albums.date_added AS date_added,
             albums.year AS year
         FROM albums
         WHERE albums.id = :albumId
@@ -765,6 +825,7 @@ interface MusicDao {
                 FROM songs
                 WHERE songs.album_id = albums.id
             ) AS song_count,
+            albums.date_added AS date_added,
             albums.year AS year
         FROM albums
         WHERE albums.title LIKE '%' || :query || '%'
@@ -784,6 +845,7 @@ interface MusicDao {
             albums.artist_id AS artist_id,
             albums.album_art_uri_string AS album_art_uri_string,
             COUNT(songs.id) AS song_count,
+            albums.date_added AS date_added,
             albums.year AS year
         FROM albums
         INNER JOIN songs ON albums.id = songs.album_id
@@ -794,6 +856,7 @@ interface MusicDao {
             albums.artist_name,
             albums.artist_id,
             albums.album_art_uri_string,
+            albums.date_added,
             albums.year
         ORDER BY albums.title ASC
     """)
@@ -810,6 +873,7 @@ interface MusicDao {
             albums.artist_id AS artist_id,
             albums.album_art_uri_string AS album_art_uri_string,
             COUNT(songs.id) AS song_count,
+            albums.date_added AS date_added,
             albums.year AS year
         FROM albums
         LEFT JOIN songs ON albums.id = songs.album_id
@@ -820,6 +884,7 @@ interface MusicDao {
             albums.artist_name,
             albums.artist_id,
             albums.album_art_uri_string,
+            albums.date_added,
             albums.year
         ORDER BY albums.title ASC
     """)
@@ -833,6 +898,7 @@ interface MusicDao {
             albums.artist_id AS artist_id,
             albums.album_art_uri_string AS album_art_uri_string,
             COUNT(songs.id) AS song_count,
+            albums.date_added AS date_added,
             albums.year AS year
         FROM albums
         INNER JOIN songs ON albums.id = songs.album_id
@@ -844,6 +910,7 @@ interface MusicDao {
             albums.artist_name,
             albums.artist_id,
             albums.album_art_uri_string,
+            albums.date_added,
             albums.year
         ORDER BY albums.title ASC
     """)

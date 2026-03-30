@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.FormatAlignLeft
 import androidx.compose.material.icons.automirrored.rounded.FormatAlignRight
+import androidx.compose.material.icons.rounded.Abc
 import androidx.compose.material.icons.rounded.FormatAlignCenter
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Translate
@@ -62,8 +63,12 @@ fun LyricsMoreBottomSheet(
     lyricsAlignment: String,
     onLyricsAlignmentChange: (String) -> Unit,
     hasTranslatedLyrics: Boolean,
+    hasRomanizedLyrics: Boolean,
     showTranslation: Boolean,
+    showRomanization: Boolean,
     onShowTranslationChange: (Boolean) -> Unit,
+    onShowRomanizationChange: (Boolean) -> Unit,
+    immersiveLyricsEnabled: Boolean,
     // BottomToggleRow params
     isShuffleEnabled: Boolean,
     repeatMode: Int,
@@ -248,43 +253,107 @@ fun LyricsMoreBottomSheet(
                 )
             }
 
-            // Sync Settings Group
-            if (showSyncedLyrics) {
-                 Column(
+            // Control Settings Group
+            val isSyncVisible = showSyncedLyrics
+            val isRomanizationVisible = hasRomanizedLyrics
+            val isTranslationVisible = hasTranslatedLyrics
+            val isImmersiveVisible = showSyncedLyrics && immersiveLyricsEnabled
+
+            if (isSyncVisible || isRomanizationVisible || isTranslationVisible) {
+                // Determine first and last items for rounding
+                val isRomanizationFirst = isRomanizationVisible && !isSyncVisible
+                val isTranslationFirst = isTranslationVisible && !isSyncVisible && !isRomanizationVisible
+
+                val isSyncLast = isSyncVisible && !isRomanizationVisible && !isTranslationVisible && !isImmersiveVisible
+                val isRomanizationLast = isRomanizationVisible && !isTranslationVisible && !isImmersiveVisible
+                val isTranslationLast = isTranslationVisible && !isImmersiveVisible
+
+                Column(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                     Text(
-                         modifier = Modifier
-                             .padding(start = 6.dp, bottom = 6.dp),
-                         text = "Controls",
-                         color = accentColor,
-                         style = MaterialTheme.typography.bodyLargeEmphasized
-                     )
-                    ListItem(
-                        headlineContent = { Text(if (isSyncControlsVisible) "Hide Sync Controls" else "Adjust Sync") },
-                        leadingContent = {
-                            Icon(
-                                imageVector = Icons.Rounded.Tune,
-                                contentDescription = null
-                            )
-                        },
+                    Text(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 8.dp, bottomEnd = 8.dp))
-                            .background(itemBackgroundColor)
-                            .clickable {
-                                onDismissRequest()
-                                onToggleSyncControls()
-                            },
-                        colors = ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                            headlineColor = contentColor,
-                            leadingIconColor = contentColor
-                        )
+                            .padding(start = 6.dp, bottom = 6.dp),
+                        text = "Controls",
+                        color = accentColor,
+                        style = MaterialTheme.typography.bodyLargeEmphasized
                     )
 
-                    if (hasTranslatedLyrics) {
+                    if (isSyncVisible) {
+                        ListItem(
+                            headlineContent = { Text(if (isSyncControlsVisible) "Hide Sync Controls" else "Adjust Sync") },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Tune,
+                                    contentDescription = null
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(
+                                    RoundedCornerShape(
+                                        topStart = 18.dp,
+                                        topEnd = 18.dp,
+                                        bottomStart = if (isSyncLast) 24.dp else 8.dp,
+                                        bottomEnd = if (isSyncLast) 24.dp else 8.dp
+                                    )
+                                )
+                                .background(itemBackgroundColor)
+                                .clickable {
+                                    onDismissRequest()
+                                    onToggleSyncControls()
+                                },
+                            colors = ListItemDefaults.colors(
+                                containerColor = Color.Transparent,
+                                headlineColor = contentColor,
+                                leadingIconColor = contentColor
+                            )
+                        )
+                    }
+
+                    if (isRomanizationVisible) {
+                        ListItem(
+                            headlineContent = { Text("Show Romanization") },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Abc,
+                                    contentDescription = null
+                                )
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = showRomanization,
+                                    onCheckedChange = onShowRomanizationChange,
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = onAccentColor,
+                                        checkedTrackColor = accentColor,
+                                        uncheckedThumbColor = contentColor,
+                                        uncheckedTrackColor = contentColor.copy(alpha = 0.3f)
+                                    )
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(
+                                    RoundedCornerShape(
+                                        topStart = if (isRomanizationFirst) 18.dp else 8.dp,
+                                        topEnd = if (isRomanizationFirst) 18.dp else 8.dp,
+                                        bottomStart = if (isRomanizationLast) 24.dp else 8.dp,
+                                        bottomEnd = if (isRomanizationLast) 24.dp else 8.dp
+                                    )
+                                )
+                                .background(itemBackgroundColor)
+                                .clickable { onShowRomanizationChange(!showRomanization) },
+                            colors = ListItemDefaults.colors(
+                                containerColor = Color.Transparent,
+                                headlineColor = contentColor,
+                                leadingIconColor = contentColor
+                            )
+                        )
+                    }
+
+                    if (isTranslationVisible) {
                         ListItem(
                             headlineContent = { Text("Show Translations") },
                             leadingContent = {
@@ -307,7 +376,14 @@ fun LyricsMoreBottomSheet(
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(
+                                    RoundedCornerShape(
+                                        topStart = if (isTranslationFirst) 18.dp else 8.dp,
+                                        topEnd = if (isTranslationFirst) 18.dp else 8.dp,
+                                        bottomStart = if (isTranslationLast) 24.dp else 8.dp,
+                                        bottomEnd = if (isTranslationLast) 24.dp else 8.dp
+                                    )
+                                )
                                 .background(itemBackgroundColor)
                                 .clickable { onShowTranslationChange(!showTranslation) },
                             colors = ListItemDefaults.colors(
@@ -319,39 +395,48 @@ fun LyricsMoreBottomSheet(
                     }
 
                     // Immersive Mode Toggle
-                    ListItem(
-                        headlineContent = { Text("Disable Immersive (Once)") },
-                        leadingContent = {
-                            Icon(
-                                imageVector = Icons.Rounded.VisibilityOff,
-                                contentDescription = null
-                            )
-                        },
-                        trailingContent = {
-                             Switch(
-                                modifier = Modifier,
-                                checked = isImmersiveTemporarilyDisabled,
-                                onCheckedChange = { 
-                                    onSetImmersiveTemporarilyDisabled(it)
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = onAccentColor,
-                                    checkedTrackColor = accentColor,
-                                    uncheckedThumbColor = contentColor,
-                                    uncheckedTrackColor = contentColor.copy(alpha = 0.3f)
+                    if (isImmersiveVisible) {
+                        ListItem(
+                            headlineContent = { Text("Disable Immersive (Once)") },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Rounded.VisibilityOff,
+                                    contentDescription = null
                                 )
+                            },
+                            trailingContent = {
+                                Switch(
+                                    modifier = Modifier,
+                                    checked = isImmersiveTemporarilyDisabled,
+                                    onCheckedChange = {
+                                        onSetImmersiveTemporarilyDisabled(it)
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = onAccentColor,
+                                        checkedTrackColor = accentColor,
+                                        uncheckedThumbColor = contentColor,
+                                        uncheckedTrackColor = contentColor.copy(alpha = 0.3f)
+                                    )
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(
+                                    RoundedCornerShape(
+                                        topStart = 8.dp,
+                                        topEnd = 8.dp,
+                                        bottomStart = 24.dp,
+                                        bottomEnd = 24.dp
+                                    )
+                                )
+                                .background(itemBackgroundColor),
+                            colors = ListItemDefaults.colors(
+                                containerColor = Color.Transparent,
+                                headlineColor = contentColor,
+                                leadingIconColor = contentColor
                             )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 24.dp, bottomEnd = 24.dp))
-                            .background(itemBackgroundColor),
-                        colors = ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                            headlineColor = contentColor,
-                            leadingIconColor = contentColor
                         )
-                    )
+                    }
                 }
             }
             

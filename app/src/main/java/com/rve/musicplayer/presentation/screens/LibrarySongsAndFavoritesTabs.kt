@@ -228,11 +228,7 @@ fun LibraryFavoritesTab(
                                         if (isSelectionMode) {
                                             onSongSelectionToggle(song)
                                         } else {
-                                            playerViewModel.showAndPlaySong(
-                                                song,
-                                                favoriteSongs.itemSnapshotList.items,
-                                                "Liked Songs"
-                                            )
+                                            playerViewModel.showAndPlaySongFromFavorites(song)
                                         }
                                     }
                                 )
@@ -412,7 +408,7 @@ fun LibrarySongsTabPaginated(
                                         { songFromListItem -> onMoreOptionsClick(songFromListItem) }
                                     }
                                     val rememberedOnClick: () -> Unit = remember(song) {
-                                        { playerViewModel.showAndPlaySong(song) }
+                                        { playerViewModel.showAndPlaySongFromLibrary(song) }
                                     }
 
                                     EnhancedSongListItem(

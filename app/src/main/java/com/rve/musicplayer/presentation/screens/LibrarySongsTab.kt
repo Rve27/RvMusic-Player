@@ -317,8 +317,7 @@ fun LibrarySongsTab(
                                         if (isSelectionMode) {
                                             { onSongSelectionToggle(song) }
                                         } else {
-                                            // Use snapshot items for playback queue
-                                            { playerViewModel.showAndPlaySong(song, songs.itemSnapshotList.items, "Library") }
+                                            { playerViewModel.showAndPlaySongFromLibrary(song) }
                                         }
                                     }
                                     

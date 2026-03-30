@@ -519,7 +519,7 @@ private fun SharedAlbumTopBarProbe(
             expandedTitleStartPadding = 24.dp,
             collapsedTitleEndPadding = 24.dp,
             expandedTitleEndPadding = 136.dp,
-            containerHeightRange = 92.dp to 56.dp,
+            containerHeightRange = 112.dp to 56.dp,
             titleStyle = MaterialTheme.typography.headlineMedium.copy(
                 fontFamily = GoogleSansRounded,
                 fontWeight = FontWeight.SemiBold,

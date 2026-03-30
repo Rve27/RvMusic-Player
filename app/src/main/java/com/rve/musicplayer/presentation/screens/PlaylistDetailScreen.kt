@@ -898,9 +898,13 @@ fun PlaylistDetailScreen(
             SortOption.SongTitleAZ,
             SortOption.SongTitleZA,
             SortOption.SongArtist,
+            SortOption.SongArtistDesc,
             SortOption.SongAlbum,
+            SortOption.SongAlbumDesc,
             SortOption.SongDateAdded,
-            SortOption.SongDuration
+            SortOption.SongDateAddedAsc,
+            SortOption.SongDuration,
+            SortOption.SongDurationAsc
         )
 
         LibrarySortBottomSheet(
@@ -916,6 +920,13 @@ fun PlaylistDetailScreen(
                      kotlinx.coroutines.delay(100)
                      listState.animateScrollToItem(0)
                  }
+            },
+            onDirectionToggle = { option ->
+                playlistViewModel.sortPlaylistSongs(option)
+                scope.launch {
+                    kotlinx.coroutines.delay(100)
+                    listState.animateScrollToItem(0)
+                }
             },
             showViewToggle = false 
         )

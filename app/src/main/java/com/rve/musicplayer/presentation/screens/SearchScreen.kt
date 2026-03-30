@@ -179,8 +179,17 @@ fun SearchScreen(
     val gradientBrush = remember(gradientColors) {
         Brush.verticalGradient(colors = gradientColors)
     }
-
     val colorScheme = MaterialTheme.colorScheme
+    val bottomGradientBrush = remember(colorScheme.surfaceContainerLowest) {
+        Brush.verticalGradient(
+            colorStops = arrayOf(
+                0.0f to Color.Transparent,
+                0.2f to Color.Transparent,
+                0.8f to colorScheme.surfaceContainerLowest,
+                1.0f to colorScheme.surfaceContainerLowest
+            )
+        )
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -259,7 +268,6 @@ fun SearchScreen(
                                         },
                                         modifier = Modifier
                                             .size(48.dp)
-                                            .padding(end = 10.dp)
                                             .clip(CircleShape)
                                             .background(
                                                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
@@ -308,35 +316,17 @@ fun SearchScreen(
                 label = "search_mode_transition"
             ) { isGenreMode ->
                 if (isGenreMode) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        GenreCategoriesGrid(
-                            genres = genres,
-                            onGenreClick = { genre ->
-                                Timber.tag("SearchScreen")
-                                    .d("Genre clicked: ${genre.name} (ID: ${genre.id})")
-                                val encodedGenreId = java.net.URLEncoder.encode(genre.id, "UTF-8")
-                                navController.navigateSafely(Screen.GenreDetail.createRoute(encodedGenreId))
-                            },
-                            playerViewModel = playerViewModel,
-                            modifier = Modifier.padding(top = 12.dp)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .align(Alignment.BottomCenter)
-                                .height(170.dp)
-                                .background(
-                                    brush = Brush.verticalGradient(
-                                        colorStops = arrayOf(
-                                            0.0f to Color.Transparent,
-                                            0.2f to Color.Transparent,
-                                            0.8f to MaterialTheme.colorScheme.surfaceContainerLowest,
-                                            1.0f to MaterialTheme.colorScheme.surfaceContainerLowest
-                                        )
-                                    )
-                                )
-                        )
-                    }
+                    GenreCategoriesGrid(
+                        genres = genres,
+                        onGenreClick = { genre ->
+                            Timber.tag("SearchScreen")
+                                .d("Genre clicked: ${genre.name} (ID: ${genre.id})")
+                            val encodedGenreId = java.net.URLEncoder.encode(genre.id, "UTF-8")
+                            navController.navigateSafely(Screen.GenreDetail.createRoute(encodedGenreId))
+                        },
+                        playerViewModel = playerViewModel,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
                 } else {
                     Column(
                         modifier = Modifier
@@ -346,9 +336,9 @@ fun SearchScreen(
                         FlowRow(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp),
+                                .padding(vertical = 8.dp, horizontal = 8.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(0.dp)
                         ) {
                             SearchFilterChip(SearchFilterType.ALL, currentFilter, playerViewModel)
                             SearchFilterChip(SearchFilterType.SONGS, currentFilter, playerViewModel)
@@ -369,6 +359,7 @@ fun SearchScreen(
                             } else {
                                 SearchResultsList(
                                     results = searchResults,
+                                    searchQuery = searchQuery,
                                     playerViewModel = playerViewModel,
                                     onItemSelected = {
                                         if (searchQuery.isNotBlank()) {
@@ -386,6 +377,14 @@ fun SearchScreen(
                 }
             }
         }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .height(170.dp)
+                .background(brush = bottomGradientBrush)
+        )
     }
 
     if (showSongInfoBottomSheet && selectedSongForInfo != null) {
@@ -602,6 +601,7 @@ fun EmptySearchResults(searchQuery: String, colorScheme: ColorScheme) {
 @Composable
 fun SearchResultsList(
     results: List<SearchResultItem>,
+    searchQuery: String,
     playerViewModel: PlayerViewModel,
     onItemSelected: () -> Unit,
     currentPlayingSongId: String?,
@@ -625,12 +625,40 @@ fun SearchResultsList(
         return
     }
 
-    val groupedResults = results.groupBy { item ->
-        when (item) {
-            is SearchResultItem.SongItem -> SearchFilterType.SONGS
-            is SearchResultItem.AlbumItem -> SearchFilterType.ALBUMS
-            is SearchResultItem.ArtistItem -> SearchFilterType.ARTISTS
-            is SearchResultItem.PlaylistItem -> SearchFilterType.PLAYLISTS
+    val groupedResults = remember(results) {
+        results.groupBy { item ->
+            when (item) {
+                is SearchResultItem.SongItem -> SearchFilterType.SONGS
+                is SearchResultItem.AlbumItem -> SearchFilterType.ALBUMS
+                is SearchResultItem.ArtistItem -> SearchFilterType.ARTISTS
+                is SearchResultItem.PlaylistItem -> SearchFilterType.PLAYLISTS
+            }
+        }
+    }
+    val songResultsQueue = remember(groupedResults) {
+        buildList {
+            groupedResults[SearchFilterType.SONGS]
+                ?.forEach { item ->
+                    val song = (item as? SearchResultItem.SongItem)?.song ?: return@forEach
+                    add(song)
+                }
+        }
+    }
+    val searchQueueName = remember(searchQuery) {
+        searchQuery.trim()
+            .takeIf { it.isNotEmpty() }
+            ?.let { "Search: $it" }
+            ?: "Search Results"
+    }
+    val onSongResultClick = remember(playerViewModel, onItemSelected, songResultsQueue, searchQueueName) {
+        { song: Song ->
+            val playbackQueue = if (songResultsQueue.any { it.id == song.id }) {
+                songResultsQueue
+            } else {
+                listOf(song)
+            }
+            playerViewModel.showAndPlaySong(song, playbackQueue, searchQueueName)
+            onItemSelected()
         }
     }
 
@@ -645,7 +673,14 @@ fun SearchResultsList(
     val systemBarPaddingBottom = WindowInsets.systemBars.asPaddingValues().calculateBottomPadding() + 94.dp
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .clip(
+                RoundedCornerShape(
+                    topStart = 28.dp,
+                    topEnd = 28.dp
+                )
+            ),
         contentPadding = PaddingValues(
             top = 8.dp,
             bottom = if (imePadding <= 8.dp) (MiniPlayerHeight + systemBarPaddingBottom) else imePadding
@@ -683,18 +718,12 @@ fun SearchResultsList(
                     Box(modifier = Modifier.padding(bottom = 12.dp)) {
                         when (item) {
                             is SearchResultItem.SongItem -> {
-                                val rememberedOnClick = remember(item.song, playerViewModel, onItemSelected) {
-                                    {
-                                        playerViewModel.showAndPlaySong(item.song)
-                                        onItemSelected()
-                                    }
-                                }
                                 EnhancedSongListItem(
                                     song = item.song,
                                     isPlaying = isPlaying,
                                     isCurrentSong = currentPlayingSongId == item.song.id,
                                     onMoreOptionsClick = onSongMoreOptionsClick,
-                                    onClick = rememberedOnClick
+                                    onClick = { onSongResultClick(item.song) }
                                 )
                             }
 

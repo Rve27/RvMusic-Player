@@ -31,7 +31,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         NavidromePlaylistEntity::class,
         TelegramTopicEntity::class
     ],
-         version = 32, // Add Telegram forum topic support
+         version = 33, // Add album date_added column
 
     exportSchema = true
 )
@@ -1157,6 +1157,28 @@ abstract class PixelPlayDatabase : RoomDatabase() {
                     )
                 """.trimIndent())
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_telegram_topics_chat_id ON telegram_topics(chat_id)")
+            }
+        }
+
+        val MIGRATION_32_33 = object : Migration(32, 33) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                if ("date_added" !in getTableColumns(db, "albums")) {
+                    db.execSQL("ALTER TABLE albums ADD COLUMN date_added INTEGER NOT NULL DEFAULT 0")
+                }
+
+                db.execSQL(
+                    """
+                        UPDATE albums
+                        SET date_added = COALESCE(
+                            (
+                                SELECT MAX(songs.date_added)
+                                FROM songs
+                                WHERE songs.album_id = albums.id
+                            ),
+                            0
+                        )
+                    """.trimIndent()
+                )
             }
         }
 

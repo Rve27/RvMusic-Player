@@ -679,7 +679,7 @@ private fun CoverArtEditorCard(
                     when {
                         isDeleted -> {
                             Icon(
-                                painter = painterResource(id = R.drawable.rounded_album_24),
+                                painter = painterResource(id = R.drawable.rounded_music_note_24),
                                 contentDescription = null,
                                 modifier = Modifier.size(72.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -701,14 +701,14 @@ private fun CoverArtEditorCard(
                                 contentDescription = "Current song cover art",
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop,
-                                placeholderResId = R.drawable.rounded_album_24,
+                                placeholderResId = R.drawable.rounded_music_note_24,
                                 errorResId = R.drawable.rounded_broken_image_24
                             )
                         }
 
                         else -> {
                             Icon(
-                                painter = painterResource(id = R.drawable.rounded_album_24),
+                                painter = painterResource(id = R.drawable.rounded_music_note_24),
                                 contentDescription = null,
                                 modifier = Modifier.size(72.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant

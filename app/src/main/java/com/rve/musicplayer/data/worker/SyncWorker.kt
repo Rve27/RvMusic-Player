@@ -511,7 +511,8 @@ constructor(
                  artistName = determinedAlbumArtist,
                  artistId = determinedAlbumArtistId,
                  albumArtUriString = representativeAlbumArt,
-                 songCount = songsInAlbum.size, 
+                 songCount = songsInAlbum.size,
+                 dateAdded = firstSong.dateAdded,
                  year = firstSong.year
              )
         }
@@ -1342,6 +1343,7 @@ constructor(
                 var realTitle = tSong.title
                 var realArtistName = tSong.artist
                 var realAlbumName = channelName
+                var realDateAdded = tSong.dateAdded
                 var realYear = 0
                 var realTrackNumber = 0
                 var realAlbumArtist = "Telegram"
@@ -1428,6 +1430,7 @@ constructor(
                         artistName = realAlbumArtist, 
                         artistId = primaryArtistId, // Link to primary song artist (or album artist if we resolved it properly)
                         songCount = 0,
+                        dateAdded = realDateAdded,
                         year = realYear,
                         albumArtUriString = tSong.albumArtUriString // Use Telegram thumb or embedded art
                     )
@@ -1540,6 +1543,7 @@ constructor(
                         artistName = primaryArtistName,
                         artistId = primaryArtistId,
                         songCount = 0,
+                        dateAdded = nSong.dateAdded,
                         year = 0,
                         albumArtUriString = nSong.albumArtUrl
                     )
