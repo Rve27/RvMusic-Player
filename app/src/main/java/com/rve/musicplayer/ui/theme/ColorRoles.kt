@@ -13,6 +13,7 @@ import com.google.android.material.color.utilities.MathUtils
 import com.google.android.material.color.utilities.QuantizerCelebi
 import com.google.android.material.color.utilities.SchemeExpressive
 import com.google.android.material.color.utilities.SchemeFruitSalad
+import com.google.android.material.color.utilities.SchemeMonochrome
 import com.google.android.material.color.utilities.SchemeTonalSpot
 import com.google.android.material.color.utilities.SchemeVibrant
 import com.rve.musicplayer.data.preferences.AlbumArtPaletteStyle
@@ -130,6 +131,18 @@ fun generateColorSchemeFromSeed(
         } else {
             ColorSchemePair(lightScheme, darkScheme)
         }
+    }.getOrElse {
+        ColorSchemePair(LightColorScheme, DarkColorScheme)
+    }
+}
+
+fun generateMonochromeColorSchemeFromSeed(seedColor: Color): ColorSchemePair {
+    return runCatching {
+        val sourceHct = Hct.fromInt(seedColor.toArgb())
+        ColorSchemePair(
+            light = SchemeMonochrome(sourceHct, false, 0.0).toComposeColorScheme(),
+            dark = SchemeMonochrome(sourceHct, true, 0.0).toComposeColorScheme()
+        )
     }.getOrElse {
         ColorSchemePair(LightColorScheme, DarkColorScheme)
     }

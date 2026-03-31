@@ -20,6 +20,7 @@ import com.rve.musicplayer.data.database.NeteaseDao
 import com.rve.musicplayer.data.database.SongArtistCrossRef
 import com.rve.musicplayer.data.database.SongEntity
 import com.rve.musicplayer.data.database.TelegramDao // Added
+import com.rve.musicplayer.data.database.resolveAlbumArtUri
 import com.rve.musicplayer.data.navidrome.NavidromeRepository
 import com.rve.musicplayer.data.media.AudioMetadataReader
 import com.rve.musicplayer.data.model.Song
@@ -1346,7 +1347,14 @@ constructor(
                 var realDateAdded = tSong.dateAdded
                 var realYear = 0
                 var realTrackNumber = 0
+                var realDiscNumber: Int? = null
                 var realAlbumArtist = "Telegram"
+                var realGenre: String? = null
+                var realLyrics: String? = null
+                var realDuration = tSong.duration
+                var realBitrate: Int? = null
+                var realSampleRate: Int? = null
+                var resolvedAlbumArtUri = tSong.resolveAlbumArtUri()
                 
                 val file = java.io.File(tSong.filePath)
                 if (tSong.filePath.isNotEmpty() && file.exists()) {
@@ -1354,13 +1362,22 @@ constructor(
                         AudioMetadataReader.read(file, readArtwork = false)?.let { meta ->
                             if (!meta.title.isNullOrBlank()) realTitle = meta.title
                             if (!meta.artist.isNullOrBlank()) realArtistName = meta.artist
-                            if (!meta.album.isNullOrBlank()) {
-                                realAlbumName = meta.album
-                                realAlbumArtist = meta.albumArtist ?: realArtistName // Default to Song Artist if Album Artist missing
+                            if (!meta.album.isNullOrBlank()) realAlbumName = meta.album
+                            if (!meta.albumArtist.isNullOrBlank()) {
+                                realAlbumArtist = meta.albumArtist
+                            } else if (!realArtistName.isBlank()) {
+                                realAlbumArtist = realArtistName
                             }
+                            if (!meta.genre.isNullOrBlank()) realGenre = meta.genre
+                            if (!meta.lyrics.isNullOrBlank()) realLyrics = meta.lyrics
                             if (meta.trackNumber != null) realTrackNumber = meta.trackNumber
+                            if (meta.discNumber != null) realDiscNumber = meta.discNumber
                             if (meta.year != null) realYear = meta.year
+                            if (meta.durationMs != null && meta.durationMs > 0L) realDuration = meta.durationMs
+                            if (meta.bitrate != null && meta.bitrate > 0) realBitrate = meta.bitrate
+                            if (meta.sampleRate != null && meta.sampleRate > 0) realSampleRate = meta.sampleRate
                         }
+                        resolvedAlbumArtUri = tSong.resolveAlbumArtUri()
                     } catch (e: Exception) {
                         // Ignore read errors, fall back to TdApi metadata
                     }
@@ -1432,7 +1449,7 @@ constructor(
                         songCount = 0,
                         dateAdded = realDateAdded,
                         year = realYear,
-                        albumArtUriString = tSong.albumArtUriString // Use Telegram thumb or embedded art
+                        albumArtUriString = resolvedAlbumArtUri
                     )
                 }
 
@@ -1445,20 +1462,21 @@ constructor(
                     albumName = realAlbumName,
                     albumId = finalAlbumId,
                     albumArtist = realAlbumArtist,
-                    duration = tSong.duration,
+                    duration = realDuration,
                     contentUriString = "telegram://${tSong.chatId}/${tSong.messageId}",
-                    albumArtUriString = tSong.albumArtUriString,
+                    albumArtUriString = resolvedAlbumArtUri,
                     filePath = tSong.filePath,
                     parentDirectoryPath = File(tSong.filePath).parent ?: "/Telegram/$channelName",
                     dateAdded = tSong.dateAdded,
-                    genre = "Telegram",
+                    genre = realGenre,
                     trackNumber = realTrackNumber,
+                    discNumber = realDiscNumber,
                     year = realYear,
                     isFavorite = false,
-                    lyrics = null,
+                    lyrics = realLyrics,
                     mimeType = tSong.mimeType,
-                    bitrate = 0,
-                    sampleRate = 0,
+                    bitrate = realBitrate,
+                    sampleRate = realSampleRate,
                     telegramChatId = tSong.chatId,
                     telegramFileId = tSong.fileId
                 )

@@ -265,6 +265,10 @@ fun LyricsSheet(
         )
     }
 
+    val hasSyncedLyrics = remember(lyrics) {
+        !lyrics?.synced.isNullOrEmpty()
+    }
+
     // Immersive Mode State
     var immersiveMode by remember { mutableStateOf(false) }
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -791,6 +795,7 @@ fun LyricsSheet(
                 LyricsFloatingToolbar(
                     modifier = Modifier.padding(horizontal = 0.dp),
                     showSyncedLyrics = showSyncedLyrics,
+                    hasSyncedLyrics = hasSyncedLyrics,
                     onShowSyncedLyricsChange = { showSyncedLyrics = it },
                     onNavigateBack = {
                         onBackClick()

@@ -41,6 +41,7 @@ import com.rve.musicplayer.data.repository.TransitionRepositoryImpl
 import com.rve.musicplayer.data.repository.FolderTreeBuilder
 import dagger.Module
 import dagger.Provides
+import dagger.Lazy
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
@@ -324,8 +325,8 @@ object AppModule {
         musicDao: MusicDao,
         lyricsRepository: LyricsRepository,
         telegramDao: com.rve.musicplayer.data.database.TelegramDao,
-        telegramCacheManager: com.rve.musicplayer.data.telegram.TelegramCacheManager,
-        telegramRepository: com.rve.musicplayer.data.telegram.TelegramRepository,
+        telegramCacheManager: Lazy<com.rve.musicplayer.data.telegram.TelegramCacheManager>,
+        telegramRepository: Lazy<com.rve.musicplayer.data.telegram.TelegramRepository>,
         songRepository: SongRepository,
         favoritesDao: FavoritesDao,
         artistImageRepository: ArtistImageRepository,
@@ -339,8 +340,8 @@ object AppModule {
             musicDao = musicDao,
             lyricsRepository = lyricsRepository,
             telegramDao = telegramDao,
-            telegramCacheManager = telegramCacheManager,
-            telegramRepository = telegramRepository,
+            telegramCacheManagerProvider = telegramCacheManager,
+            telegramRepositoryProvider = telegramRepository,
             songRepository = songRepository,
             favoritesDao = favoritesDao,
             artistImageRepository = artistImageRepository,

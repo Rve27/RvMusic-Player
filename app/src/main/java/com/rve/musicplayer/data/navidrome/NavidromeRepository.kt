@@ -431,7 +431,11 @@ class NavidromeRepository @Inject constructor(
             // Sync playlists
             val playlistResult = syncPlaylists().getOrElse {
                 // Playlists failed but library songs may have synced
-                syncUnifiedLibrarySongsFromNavidrome()
+                try {
+                    syncUnifiedLibrarySongsFromNavidrome()
+                } catch (e: Exception) {
+                    Timber.e(e, "$TAG: Failed to sync unified library after playlist fetch failure")
+                }
                 return@withContext Result.success(
                     BulkSyncResult(
                         playlistCount = 0,
@@ -453,7 +457,11 @@ class NavidromeRepository @Inject constructor(
             }
 
             // Sync to unified library once after everything is synced
-            syncUnifiedLibrarySongsFromNavidrome()
+            try {
+                syncUnifiedLibrarySongsFromNavidrome()
+            } catch (e: Exception) {
+                Timber.e(e, "$TAG: Failed to sync unified library")
+            }
 
             Result.success(
                 BulkSyncResult(
@@ -643,7 +651,8 @@ class NavidromeRepository @Inject constructor(
                     songCount = 0,
                     dateAdded = navidromeSong.dateAdded,
                     year = navidromeSong.year,
-                    albumArtUriString = getCoverArtUrl(navidromeSong.coverArtId)
+                    albumArtUriString = navidromeSong.coverArtId?.takeIf { it.isNotBlank() }
+                        ?.let { "navidrome_cover://$it" }
                 )
             )
 
@@ -657,7 +666,8 @@ class NavidromeRepository @Inject constructor(
                     albumName = albumName,
                     albumId = albumId,
                     contentUriString = "navidrome://${navidromeSong.navidromeId}",
-                    albumArtUriString = getCoverArtUrl(navidromeSong.coverArtId),
+                    albumArtUriString = navidromeSong.coverArtId?.takeIf { it.isNotBlank() }
+                        ?.let { "navidrome_cover://$it" },
                     duration = navidromeSong.duration,
                     genre = navidromeSong.genre ?: NAVIDROME_GENRE,
                     filePath = navidromeSong.path,

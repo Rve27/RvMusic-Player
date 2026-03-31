@@ -117,6 +117,8 @@ import javax.inject.Inject
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import coil.imageLoader
+import coil.memory.MemoryCache
+import dagger.Lazy
 
 private const val CAST_LOG_TAG = "PlayerCastTransfer"
 private const val ENABLE_FOLDERS_SOURCE_SWITCHING = false
@@ -167,7 +169,7 @@ class PlayerViewModel @Inject constructor(
 
     private val dualPlayerEngine: DualPlayerEngine,
     private val appShortcutManager: AppShortcutManager,
-    private val telegramCacheManager: com.rve.musicplayer.data.telegram.TelegramCacheManager,
+    private val telegramCacheManagerProvider: Lazy<com.rve.musicplayer.data.telegram.TelegramCacheManager>,
     private val listeningStatsTracker: ListeningStatsTracker,
     private val dailyMixStateHolder: DailyMixStateHolder,
     private val lyricsStateHolder: LyricsStateHolder,
@@ -241,44 +243,45 @@ class PlayerViewModel @Inject constructor(
     @OptIn(ExperimentalCoroutinesApi::class)
     val paginatedSongs: Flow<PagingData<Song>> = libraryStateHolder.songsPagingFlow
         .cachedIn(viewModelScope)
-    
-    // Observe embedded art updates for Telegram songs - refresh colors when available
-    private val embeddedArtObserverJob = viewModelScope.launch {
-        launch {
-            telegramCacheManager.embeddedArtUpdated.collect { updatedArtUri ->
-                refreshArtwork(updatedArtUri)
+
+    private val offlinePlaybackObserverJob = viewModelScope.launch {
+        connectivityStateHolder.offlinePlaybackBlocked.collect {
+            Timber.w("Received offline blocked event. Showing dialog.")
+            _showNoInternetDialog.emit(Unit)
+        }
+    }
+
+    private var telegramPlaybackObserversStarted = false
+
+    private fun ensureTelegramPlaybackObserversStarted() {
+        if (telegramPlaybackObserversStarted) return
+        telegramPlaybackObserversStarted = true
+
+        val telegramCacheManager = telegramCacheManagerProvider.get()
+        val telegramRepository = musicRepository.telegramRepository
+
+        viewModelScope.launch {
+            launch {
+                telegramCacheManager.embeddedArtUpdated.collect { updatedArtUri ->
+                    refreshArtwork(updatedArtUri)
+                }
             }
-        }
-        
-        launch {
-             connectivityStateHolder.offlinePlaybackBlocked.collect {
-                 Timber.w("Received offline blocked event. Showing dialog.")
-                 _showNoInternetDialog.emit(Unit)
-             }
-        }
-        
-        launch {
-            musicRepository.telegramRepository.downloadCompleted
-                .onEach { fileId: Int ->
-                    // Check if the downloaded file belongs to the current song
+
+            launch {
+                telegramRepository.downloadCompleted.collect {
                     val currentSong = playbackStateHolder.stablePlayerState.value.currentSong
                     if (currentSong != null && currentSong.contentUriString.startsWith("telegram:")) {
-                        // Refresh art if the downloaded file is the audio file or the thumbnail
-                         val uri = Uri.parse(currentSong.contentUriString)
-                         val chatId = uri.host?.toLongOrNull()
-                         val messageId = uri.pathSegments.firstOrNull()?.toLongOrNull()
-                         
-                         if (chatId != null && messageId != null) {
-                             // Force a refresh attempt for this song
-                             // We construct the art URI manually since we know the pattern
-                             val artUri = "telegram_art://$chatId/$messageId"
-                             refreshArtwork(artUri)
-                         }
+                        val uri = Uri.parse(currentSong.contentUriString)
+                        val chatId = uri.host?.toLongOrNull()
+                        val messageId = uri.pathSegments.firstOrNull()?.toLongOrNull()
+
+                        if (chatId != null && messageId != null) {
+                            refreshArtwork("telegram_art://$chatId/$messageId")
+                        }
                     }
                 }
-                .launchIn(this)
+            }
         }
-
     }
 
     private suspend fun refreshArtwork(updatedArtUri: String) {
@@ -2426,6 +2429,7 @@ class PlayerViewModel @Inject constructor(
                         
                         // Offline check for Telegram songs
                         if (song?.contentUriString?.startsWith("telegram:") == true) {
+                            ensureTelegramPlaybackObserversStarted()
                             val isOnline = connectivityStateHolder.isOnline.value
                             if (!isOnline) {
                                 val fileId = song.telegramFileId
@@ -2588,6 +2592,7 @@ class PlayerViewModel @Inject constructor(
 
             // Offline check for the starting song if it is a Telegram song
             if (validStartSong.contentUriString.startsWith("telegram:")) {
+                ensureTelegramPlaybackObserversStarted()
                 val isOnline = connectivityStateHolder.isOnline.value
                 val fileId = validStartSong.telegramFileId
                 
@@ -2856,6 +2861,9 @@ class PlayerViewModel @Inject constructor(
             // This populates the resolvedUriCache so resolveDataSpec finds it instantly.
             val startingUri = MediaItemBuilder.playbackUri(effectiveStartSong.contentUriString)
             if (startingUri.scheme == "telegram" || startingUri.scheme == "netease" || startingUri.scheme == "qqmusic") {
+                if (startingUri.scheme == "telegram") {
+                    ensureTelegramPlaybackObserversStarted()
+                }
                 dualPlayerEngine.resolveCloudUri(startingUri)
             }
 

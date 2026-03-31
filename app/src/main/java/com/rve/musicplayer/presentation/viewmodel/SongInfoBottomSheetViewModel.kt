@@ -30,6 +30,12 @@ class SongInfoBottomSheetViewModel @Inject constructor(
     private val musicDao: MusicDao,
 ) : ViewModel() {
 
+    data class SongLocationInfo(
+        val label: String,
+        val value: String,
+        val isCloud: Boolean,
+    )
+
     private val _audioMeta = MutableStateFlow<AudioMeta?>(null)
     private val _isPixelPlayWatchAvailable = MutableStateFlow(false)
     val isPixelPlayWatchAvailable: StateFlow<Boolean> = _isPixelPlayWatchAvailable.asStateFlow()
@@ -79,6 +85,23 @@ class SongInfoBottomSheetViewModel @Inject constructor(
         }
     }
 
+    fun getSongLocationInfo(song: Song): SongLocationInfo {
+        val provider = getCloudProviderLabel(song.contentUriString)
+        return if (provider != null) {
+            SongLocationInfo(
+                label = "Provider",
+                value = provider,
+                isCloud = true,
+            )
+        } else {
+            SongLocationInfo(
+                label = "Path",
+                value = song.path,
+                isCloud = false,
+            )
+        }
+    }
+
     fun refreshWatchAvailability() {
         if (_isRefreshingWatchAvailability.value) return
 
@@ -97,17 +120,13 @@ class SongInfoBottomSheetViewModel @Inject constructor(
     }
 
     fun isLocalSongForWatchTransfer(song: Song): Boolean {
-        val uri = song.contentUriString
-        val isCloudSong = uri.startsWith("telegram://") ||
-            uri.startsWith("netease://") ||
-               uri.startsWith("qqmusic://") ||
-            uri.startsWith("gdrive://")
-        if (isCloudSong) return false
+        if (getCloudProviderLabel(song.contentUriString) != null) return false
 
         if (song.path.isNotBlank()) {
             return File(song.path).exists()
         }
 
+        val uri = song.contentUriString
         return uri.startsWith("content://") || uri.startsWith("file://")
     }
 
@@ -158,5 +177,16 @@ class SongInfoBottomSheetViewModel @Inject constructor(
 
     fun isSongSavedOnAllReachableWatches(songId: String): Boolean {
         return transferStateStore.isSongSavedOnAllReachableWatches(songId)
+    }
+
+    private fun getCloudProviderLabel(contentUriString: String): String? {
+        return when {
+            contentUriString.startsWith("telegram://") -> "Telegram"
+            contentUriString.startsWith("netease://") -> "Netease Cloud Music"
+            contentUriString.startsWith("qqmusic://") -> "QQ Music"
+            contentUriString.startsWith("navidrome://") -> "Navidrome"
+            contentUriString.startsWith("gdrive://") -> "Google Drive"
+            else -> null
+        }
     }
 }

@@ -107,6 +107,12 @@ fun GenreDetailScreen(
             1f - ((topBarHeight.value - minTopBarHeightPx) / (maxTopBarHeightPx - minTopBarHeightPx)).coerceIn(0f, 1f)
         }
     }
+    val showScrollBar by remember {
+        derivedStateOf {
+            collapseFraction > 0.95f &&
+                (lazyListState.canScrollForward || lazyListState.canScrollBackward)
+        }
+    }
 
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
@@ -240,7 +246,7 @@ fun GenreDetailScreen(
                 contentPadding = PaddingValues(
                     top = minTopBarHeight + 8.dp, // FIXED padding
                     start = 8.dp,
-                    end = 8.dp, // Stabilize padding to avoid remeasure during transition
+                    end = if (showScrollBar) 24.dp else 8.dp,
                     bottom = fabBottomPadding + 148.dp
                 ),
                 modifier = Modifier
@@ -316,7 +322,7 @@ fun GenreDetailScreen(
             }
 
             // Only show scrollbar when the top bar is mostly collapsed to avoid visual conflict
-            if (collapseFraction > 0.95f) {
+            if (showScrollBar) {
                 ExpressiveScrollBar(
                     listState = lazyListState,
                     modifier = Modifier
@@ -345,7 +351,7 @@ fun GenreDetailScreen(
             Box(
                  modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(bottom = fabBottomPadding + 16.dp, end = 16.dp)
+                    .padding(bottom = fabBottomPadding + 26.dp, end = 16.dp)
                     .zIndex(10f) // Ensure FAB is above everything
             ) {
                  MediumFloatingActionButton(
@@ -465,6 +471,13 @@ fun GenreDetailScreen(
                         },
                         onNavigateToArtist = {
                             com.rve.musicplayer.presentation.navigation.Screen.ArtistDetail.createRoute(song.artistId).let { route ->
+                                navController.navigateSafely(route)
+                            }
+                            showSongOptionsSheet = null
+                        },
+                        onNavigateToGenre = {
+                            song.genre?.let {
+                                val route = com.rve.musicplayer.presentation.navigation.Screen.GenreDetail.createRoute(java.net.URLEncoder.encode(it, "UTF-8"))
                                 navController.navigateSafely(route)
                             }
                             showSongOptionsSheet = null
@@ -790,4 +803,3 @@ fun GenreSongItemWrapper(
         }
     }
 }
-
