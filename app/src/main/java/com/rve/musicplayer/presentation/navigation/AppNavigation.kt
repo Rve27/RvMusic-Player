@@ -12,7 +12,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -72,10 +71,6 @@ fun AppNavigation(
 ) {
     var startDestination by remember { mutableStateOf<String?>(null) }
 
-    val spatialSpecIntOffset = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
-    val spatialSpecFloat = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
-    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-
     LaunchedEffect(Unit) {
         startDestination = userPreferencesRepository.launchTabFlow
             .first()
@@ -93,39 +88,28 @@ fun AppNavigation(
                     mainRootEnterTransition(
                         fromRoute = initialState.destination.route,
                         toRoute = targetState.destination.route,
-                        fallback = enterTransition(
-                            animationSpec = spatialSpecIntOffset
-                        )
+                        fallback = enterTransition()
                     )
                 },
                 exitTransition = {
                     mainRootExitTransition(
                         fromRoute = initialState.destination.route,
                         toRoute = targetState.destination.route,
-                        fallback = exitTransition(
-                            slideOutAnimationSpec = spatialSpecIntOffset,
-                            fadeOutAnimationSpec = effectsSpec
-                        )
+                        fallback = exitTransition()
                     )
                 },
                 popEnterTransition = {
                     mainRootEnterTransition(
                         fromRoute = initialState.destination.route,
                         toRoute = targetState.destination.route,
-                        fallback = popEnterTransition(
-                            slideInAnimationSpec = spatialSpecIntOffset,
-                            scaleInAnimationSpec = spatialSpecFloat
-                        )
+                        fallback = popEnterTransition()
                     )
                 },
                 popExitTransition = {
                     mainRootExitTransition(
                         fromRoute = initialState.destination.route,
                         toRoute = targetState.destination.route,
-                        fallback = popExitTransition(
-                            slideOutAnimationSpec = spatialSpecIntOffset,
-                            scaleOutAnimationSpec = spatialSpecFloat
-                        )
+                        fallback = popExitTransition()
                     )
                 },
             ) {
@@ -144,39 +128,28 @@ fun AppNavigation(
                     mainRootEnterTransition(
                         fromRoute = initialState.destination.route,
                         toRoute = targetState.destination.route,
-                        fallback = enterTransition(
-                            animationSpec = spatialSpecIntOffset
-                        )
+                        fallback = enterTransition()
                     )
                 },
                 exitTransition = {
                     mainRootExitTransition(
                         fromRoute = initialState.destination.route,
                         toRoute = targetState.destination.route,
-                        fallback = exitTransition(
-                            slideOutAnimationSpec = spatialSpecIntOffset,
-                            fadeOutAnimationSpec = effectsSpec
-                        )
+                        fallback = exitTransition()
                     )
                 },
                 popEnterTransition = {
                     mainRootEnterTransition(
                         fromRoute = initialState.destination.route,
                         toRoute = targetState.destination.route,
-                        fallback = popEnterTransition(
-                            slideInAnimationSpec = spatialSpecIntOffset,
-                            scaleInAnimationSpec = spatialSpecFloat
-                        )
+                        fallback = popEnterTransition()
                     )
                 },
                 popExitTransition = {
                     mainRootExitTransition(
                         fromRoute = initialState.destination.route,
                         toRoute = targetState.destination.route,
-                        fallback = popExitTransition(
-                            slideOutAnimationSpec = spatialSpecIntOffset,
-                            scaleOutAnimationSpec = spatialSpecFloat
-                        )
+                        fallback = popExitTransition()
                     )
                 },
             ) {
@@ -195,39 +168,28 @@ fun AppNavigation(
                     mainRootEnterTransition(
                         fromRoute = initialState.destination.route,
                         toRoute = targetState.destination.route,
-                        fallback = enterTransition(
-                            animationSpec = spatialSpecIntOffset
-                        )
+                        fallback = enterTransition()
                     )
                 },
                 exitTransition = {
                     mainRootExitTransition(
                         fromRoute = initialState.destination.route,
                         toRoute = targetState.destination.route,
-                        fallback = exitTransition(
-                            slideOutAnimationSpec = spatialSpecIntOffset,
-                            fadeOutAnimationSpec = effectsSpec
-                        )
+                        fallback = exitTransition()
                     )
                 },
                 popEnterTransition = {
                     mainRootEnterTransition(
                         fromRoute = initialState.destination.route,
                         toRoute = targetState.destination.route,
-                        fallback = popEnterTransition(
-                            slideInAnimationSpec = spatialSpecIntOffset,
-                            scaleInAnimationSpec = spatialSpecFloat
-                        )
+                        fallback = popEnterTransition()
                     )
                 },
                 popExitTransition = {
                     mainRootExitTransition(
                         fromRoute = initialState.destination.route,
                         toRoute = targetState.destination.route,
-                        fallback = popExitTransition(
-                            slideOutAnimationSpec = spatialSpecIntOffset,
-                            scaleOutAnimationSpec = spatialSpecFloat
-                        )
+                        fallback = popExitTransition()
                     )
                 },
             ) {
@@ -237,29 +199,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.Settings.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     SettingsScreen(
@@ -273,29 +216,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.Accounts.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     AccountsScreen(
@@ -315,29 +239,10 @@ fun AppNavigation(
             composable(
                 route = Screen.SettingsCategory.route,
                 arguments = listOf(navArgument("categoryId") { type = NavType.StringType }),
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) { backStackEntry ->
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     val categoryId = backStackEntry.arguments?.getString("categoryId")
@@ -353,29 +258,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.PaletteStyle.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     PaletteStyleSettingsScreen(
@@ -386,29 +272,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.Experimental.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     ExperimentalSettingsScreen(
@@ -420,29 +287,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.DailyMixScreen.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     DailyMixScreen(
@@ -453,29 +301,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.RecentlyPlayed.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     RecentlyPlayedScreen(
@@ -486,29 +315,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.Stats.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     StatsScreen(
@@ -519,29 +329,10 @@ fun AppNavigation(
             composable(
                 route = Screen.PlaylistDetail.route,
                 arguments = listOf(navArgument("playlistId") { type = NavType.StringType }),
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) { backStackEntry ->
                 val playlistId = backStackEntry.arguments?.getString("playlistId")
                 val playlistViewModel: PlaylistViewModel = hiltViewModel()
@@ -561,29 +352,10 @@ fun AppNavigation(
 
             composable(
                 Screen.DJSpace.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     MashupScreen()
@@ -592,29 +364,10 @@ fun AppNavigation(
             composable(
                 route = Screen.GenreDetail.route,
                 arguments = listOf(navArgument("genreId") { type = NavType.StringType }),
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) { backStackEntry ->
                 val genreId = backStackEntry.arguments?.getString("genreId")
                 if (genreId != null) {
@@ -632,29 +385,10 @@ fun AppNavigation(
             composable(
                 route = Screen.AlbumDetail.route,
                 arguments = listOf(navArgument("albumId") { type = NavType.StringType }),
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) { backStackEntry ->
                 val albumId = backStackEntry.arguments?.getString("albumId")
                 if (albumId != null) {
@@ -670,29 +404,10 @@ fun AppNavigation(
             composable(
                 route = Screen.ArtistDetail.route,
                 arguments = listOf(navArgument("artistId") { type = NavType.StringType }),
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) { backStackEntry ->
                 val artistId = backStackEntry.arguments?.getString("artistId")
                 if (artistId != null) {
@@ -707,29 +422,10 @@ fun AppNavigation(
             }
             composable(
                 "nav_bar_corner_radius",
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     NavBarCornerRadiusScreen(navController)
@@ -741,29 +437,10 @@ fun AppNavigation(
                     type = NavType.StringType
                     nullable = true
                 }),
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     EditTransitionScreen(navController = navController)
@@ -771,29 +448,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.About.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     AboutScreen(
@@ -805,29 +463,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.EasterEgg.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     EasterEggScreen(
@@ -838,29 +477,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.ArtistSettings.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     ArtistSettingsScreen(navController = navController)
@@ -868,29 +488,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.DelimiterConfig.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     DelimiterConfigScreen(navController = navController)
@@ -898,29 +499,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.Equalizer.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     EqualizerScreen(
@@ -931,29 +513,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.DeviceCapabilities.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     com.rve.musicplayer.presentation.screens.DeviceCapabilitiesScreen(
@@ -964,29 +527,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.NeteaseDashboard.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     com.rve.musicplayer.presentation.netease.dashboard.NeteaseDashboardScreen(
@@ -996,29 +540,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.QqMusicDashboard.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     com.rve.musicplayer.presentation.qqmusic.dashboard.QqMusicDashboardScreen(
@@ -1028,29 +553,10 @@ fun AppNavigation(
             }
             composable(
                 Screen.NavidromeDashboard.route,
-                enterTransition = {
-                    enterTransition(
-                        animationSpec = spatialSpecIntOffset
-                    )
-                },
-                exitTransition = {
-                    exitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        fadeOutAnimationSpec = effectsSpec
-                    )
-                },
-                popEnterTransition = {
-                    popEnterTransition(
-                        slideInAnimationSpec = spatialSpecIntOffset,
-                        scaleInAnimationSpec = spatialSpecFloat
-                    )
-                },
-                popExitTransition = {
-                    popExitTransition(
-                        slideOutAnimationSpec = spatialSpecIntOffset,
-                        scaleOutAnimationSpec = spatialSpecFloat
-                    )
-                },
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
             ) {
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     com.rve.musicplayer.presentation.navidrome.dashboard.NavidromeDashboardScreen(

@@ -1093,10 +1093,10 @@ fun SettingsCategoryScreen(
         // Block interaction during transition
         var isTransitioning by remember { mutableStateOf(true) }
         LaunchedEffect(Unit) {
-            kotlinx.coroutines.delay(350L)
+            kotlinx.coroutines.delay(com.rve.musicplayer.presentation.navigation.TRANSITION_DURATION.toLong())
             isTransitioning = false
         }
-
+        
         if (isTransitioning) {
             Box(modifier = Modifier
                 .fillMaxSize()

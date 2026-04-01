@@ -1,54 +1,46 @@
 package com.rve.musicplayer.presentation.navigation
 
-import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.unit.IntOffset
+
+const val TRANSITION_DURATION = 350
+private val TRANSITION_EASING = FastOutSlowInEasing
 
 // Push: Enter from Right
-fun enterTransition(
-    animationSpec: FiniteAnimationSpec<IntOffset>
-) = slideInHorizontally(
-    animationSpec = animationSpec,
+fun enterTransition() = slideInHorizontally(
+    animationSpec = tween(TRANSITION_DURATION, easing = TRANSITION_EASING),
     initialOffsetX = { it }
 )
 
 // Push: Exit to Left with Fade
-fun exitTransition(
-    slideOutAnimationSpec: FiniteAnimationSpec<IntOffset>,
-    fadeOutAnimationSpec: FiniteAnimationSpec<Float>
-) = slideOutHorizontally(
-    animationSpec = slideOutAnimationSpec,
+fun exitTransition() = slideOutHorizontally(
+    animationSpec = tween(TRANSITION_DURATION, easing = TRANSITION_EASING),
     targetOffsetX = { -it / 3 }
 ) + fadeOut(
-    animationSpec = fadeOutAnimationSpec
+    animationSpec = tween(TRANSITION_DURATION, easing = TRANSITION_EASING)
 )
 
 // Pop: Enter from Left (Parallax, No Fade)
-fun popEnterTransition(
-    slideInAnimationSpec: FiniteAnimationSpec<IntOffset>,
-    scaleInAnimationSpec: FiniteAnimationSpec<Float>
-) = slideInHorizontally(
-    animationSpec = slideInAnimationSpec,
+fun popEnterTransition() = slideInHorizontally(
+    animationSpec = tween(TRANSITION_DURATION, easing = TRANSITION_EASING),
     initialOffsetX = { -it / 3 } // Start from Left (parallax)
 ) + scaleIn(
-    animationSpec = scaleInAnimationSpec,
+    animationSpec = tween(TRANSITION_DURATION, easing = TRANSITION_EASING),
     initialScale = 0.9f // Slight zoom in for depth
 )
 
 // Pop: Exit to Right with Scale Down (No Fade)
-fun popExitTransition(
-    slideOutAnimationSpec: FiniteAnimationSpec<IntOffset>,
-    scaleOutAnimationSpec: FiniteAnimationSpec<Float>
-) = slideOutHorizontally(
-    animationSpec = slideOutAnimationSpec,
+fun popExitTransition() = slideOutHorizontally(
+    animationSpec = tween(TRANSITION_DURATION, easing = TRANSITION_EASING),
     targetOffsetX = { it }
 ) + scaleOut(
-    animationSpec = scaleOutAnimationSpec,
+    animationSpec = tween(TRANSITION_DURATION, easing = TRANSITION_EASING),
     targetScale = 0.75f,
     transformOrigin = TransformOrigin(0.5f, 0.5f)
 )
