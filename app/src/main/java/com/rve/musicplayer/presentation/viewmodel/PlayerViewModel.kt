@@ -71,6 +71,7 @@ import com.rve.musicplayer.data.service.http.MediaFileHttpServerService
 import com.rve.musicplayer.data.service.player.DualPlayerEngine
 import com.rve.musicplayer.data.worker.SyncManager
 import com.rve.musicplayer.utils.AppShortcutManager
+import com.rve.musicplayer.utils.ValidatedLyricsImport
 import com.rve.musicplayer.utils.QueueUtils
 import com.rve.musicplayer.utils.MediaItemBuilder
 import com.rve.musicplayer.utils.LyricsUtils
@@ -526,6 +527,8 @@ class PlayerViewModel @Inject constructor(
     )
     val toastEvents = _toastEvents.asSharedFlow()
 
+    private val _albumNavigationRequests = MutableSharedFlow<Long>(extraBufferCapacity = 1)
+    val albumNavigationRequests = _albumNavigationRequests.asSharedFlow()
     private val _artistNavigationRequests = MutableSharedFlow<Long>(extraBufferCapacity = 1)
     val artistNavigationRequests = _artistNavigationRequests.asSharedFlow()
     private val _searchNavDoubleTapEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
@@ -535,6 +538,7 @@ class PlayerViewModel @Inject constructor(
     private val _scrollToIndexEvent = MutableSharedFlow<Int>(extraBufferCapacity = 1)
     val scrollToIndexEvent = _scrollToIndexEvent.asSharedFlow()
     
+    private var albumNavigationJob: Job? = null
     private var artistNavigationJob: Job? = null
     private var fullQueuePlaybackJob: Job? = null
     private var fullQueuePlaybackToken: Long = 0L
@@ -1715,9 +1719,12 @@ class PlayerViewModel @Inject constructor(
 
 
         viewModelScope.launch {
-            userPreferencesRepository.repeatModeFlow.collect { mode ->
-                applyPreferredRepeatMode(mode)
-            }
+            // Repeat preference is only a startup restore value.
+            // Keeping a live collector here creates a feedback path:
+            // player -> DataStore -> collector -> player, which can cause
+            // repeat mode oscillation if a transient player state is persisted.
+            val savedRepeatMode = userPreferencesRepository.repeatModeFlow.first()
+            applyPreferredRepeatMode(savedRepeatMode)
         }
 
         viewModelScope.launch {
@@ -2031,6 +2038,36 @@ class PlayerViewModel @Inject constructor(
         _sheetState.value = PlayerSheetState.COLLAPSED
         if (resetPredictiveState) {
             resetPredictiveBackState()
+        }
+    }
+
+    fun triggerAlbumNavigationFromPlayer(albumId: Long) {
+        if (albumId <= 0) {
+            Log.d("AlbumDebug", "triggerAlbumNavigationFromPlayer ignored invalid albumId=$albumId")
+            return
+        }
+
+        val existingJob = albumNavigationJob
+        if (existingJob != null && existingJob.isActive) {
+            Log.d("AlbumDebug", "triggerAlbumNavigationFromPlayer ignored; navigation already in progress for albumId=$albumId")
+            return
+        }
+
+        albumNavigationJob?.cancel()
+        albumNavigationJob = viewModelScope.launch {
+            val currentSong = playbackStateHolder.stablePlayerState.value.currentSong
+            Log.d(
+                "AlbumDebug",
+                "triggerAlbumNavigationFromPlayer: albumId=$albumId, songId=${currentSong?.id}, title=${currentSong?.title}"
+            )
+            collapsePlayerSheet()
+
+            withTimeoutOrNull(900) {
+                awaitSheetState(PlayerSheetState.COLLAPSED)
+                awaitPlayerCollapse()
+            }
+
+            _albumNavigationRequests.emit(albumId)
         }
     }
 
@@ -4053,16 +4090,9 @@ class PlayerViewModel @Inject constructor(
      * @param songId El ID de la canción para la que se importa la letra.
      * @param lyricsContent El contenido de la letra como String.
      */
-    fun importLyricsFromFile(songId: Long, lyricsContent: String) {
+    fun importLyricsFromFile(songId: Long, validatedImport: ValidatedLyricsImport) {
         val currentSong = stablePlayerState.value.currentSong
-        lyricsStateHolder.importLyricsFromFile(songId, lyricsContent, currentSong)
-
-        // Optimistic local update since holder event handles persistence
-        if (currentSong?.id?.toLong() == songId) {
-            val parsed = com.rve.musicplayer.utils.LyricsUtils.parseLyrics(lyricsContent)
-            val updatedSong = currentSong.copy(lyrics = lyricsContent)
-            updateSongInStates(updatedSong, parsed)
-        }
+        lyricsStateHolder.importLyricsFromFile(songId, validatedImport, currentSong)
     }
 
     /**

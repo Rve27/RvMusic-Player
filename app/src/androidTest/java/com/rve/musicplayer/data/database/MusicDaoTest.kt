@@ -63,6 +63,7 @@ class MusicDaoTest {
             artistId = 101L,
             albumArtUriString = "art_uri_$id",
             songCount = 5,
+            dateAdded = 0L,
             year = 2023
         )
     }

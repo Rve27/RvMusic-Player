@@ -34,7 +34,8 @@ private const val SONG_DETAIL_PROJECTION = """
     songs.bitrate AS bitrate,
     songs.sample_rate AS sample_rate,
     songs.telegram_chat_id AS telegram_chat_id,
-    songs.telegram_file_id AS telegram_file_id
+    songs.telegram_file_id AS telegram_file_id,
+    songs.artists_json AS artists_json
 """
 
 @Dao
@@ -1068,7 +1069,7 @@ interface MusicDao {
     @Query("DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM songs)")
     suspend fun deleteOrphanedAlbums()
 
-    @Query("DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM songs)")
+    @Query("DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM song_artist_cross_ref)")
     suspend fun deleteOrphanedArtists()
 
     // --- Favorite Operations ---
@@ -1087,16 +1088,69 @@ interface MusicDao {
         return newStatus
     }
 
-    @Query("UPDATE songs SET title = :title, artist_name = :artist, album_name = :album, genre = :genre, track_number = :trackNumber, disc_number = :discNumber WHERE id = :songId")
+    @Query("""
+        UPDATE songs
+        SET title = :title,
+            artist_name = :artist,
+            artist_id = :artistId,
+            artists_json = :artistsJson,
+            album_name = :album,
+            genre = :genre,
+            track_number = :trackNumber,
+            disc_number = :discNumber
+        WHERE id = :songId
+    """)
     suspend fun updateSongMetadata(
         songId: Long,
         title: String,
         artist: String,
+        artistId: Long,
+        artistsJson: String?,
         album: String,
         genre: String?,
         trackNumber: Int,
         discNumber: Int?
     )
+
+    @Transaction
+    suspend fun updateSongMetadataAndArtistLinks(
+        songId: Long,
+        title: String,
+        artist: String,
+        artistId: Long,
+        artistsJson: String?,
+        album: String,
+        genre: String?,
+        trackNumber: Int,
+        discNumber: Int?,
+        artistsToEnsure: List<ArtistEntity>,
+        crossRefs: List<SongArtistCrossRef>
+    ) {
+        if (artistsToEnsure.isNotEmpty()) {
+            insertArtistsIgnoreConflicts(artistsToEnsure)
+        }
+
+        updateSongMetadata(
+            songId = songId,
+            title = title,
+            artist = artist,
+            artistId = artistId,
+            artistsJson = artistsJson,
+            album = album,
+            genre = genre,
+            trackNumber = trackNumber,
+            discNumber = discNumber
+        )
+
+        deleteCrossRefsForSong(songId)
+        if (crossRefs.isNotEmpty()) {
+            crossRefs.chunked(CROSS_REF_BATCH_SIZE).forEach { chunk ->
+                insertSongArtistCrossRefs(chunk)
+            }
+        }
+
+        deleteOrphanedArtists()
+    }
 
     @Query("UPDATE songs SET album_art_uri_string = :albumArtUri WHERE id = :songId")
     suspend fun updateSongAlbumArt(songId: Long, albumArtUri: String?)

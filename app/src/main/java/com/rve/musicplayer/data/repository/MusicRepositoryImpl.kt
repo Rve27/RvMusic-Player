@@ -61,6 +61,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -101,6 +103,7 @@ class MusicRepositoryImpl @Inject constructor(
     private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     // Tracks the active prefetch job so a new flow emission cancels the previous one.
     @Volatile private var prefetchJob: Job? = null
+    @Volatile private var currentSongArtistPrefetchJob: Job? = null
     @Volatile private var telegramDownloadSyncObserverStarted = false
     private val telegramCacheManager: com.rve.musicplayer.data.telegram.TelegramCacheManager
         get() = telegramCacheManagerProvider.get()
@@ -122,6 +125,13 @@ class MusicRepositoryImpl @Inject constructor(
             }
         }
     }
+
+    private fun List<Artist>.missingImageCandidates(): List<Pair<Long, String>> =
+        asSequence()
+            .filter { it.effectiveImageUrl.isNullOrBlank() && it.name.isNotBlank() }
+            .map { it.id to it.name }
+            .distinctBy { (_, name) -> name.trim().lowercase() }
+            .toList()
 
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun getAudioFiles(): Flow<List<Song>> {
@@ -263,11 +273,7 @@ class MusicRepositoryImpl @Inject constructor(
                 .map { entities ->
                     val artists = entities.map { it.toArtist() }
                     // Trigger prefetch for missing images (non-blocking)
-                    val missingImages = artists.asSequence()
-                        .filter { it.imageUrl.isNullOrEmpty() && it.name.isNotBlank() }
-                        .map { it.id to it.name }
-                        .distinctBy { (_, name) -> name.trim().lowercase() }
-                        .toList()
+                    val missingImages = artists.missingImageCandidates()
                     if (missingImages.isNotEmpty()) {
                         // Cancel any in-flight prefetch before starting a new one — the flow
                         // can emit multiple times during sync, and concurrent launches would
@@ -293,9 +299,19 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     override fun getArtistsForSong(songId: Long): Flow<List<Artist>> {
-        return musicDao.getArtistsForSong(songId).map { entities ->
-            entities.map { it.toArtist() }
-        }.flowOn(Dispatchers.IO)
+        return musicDao.getArtistsForSong(songId)
+            .map { entities -> entities.map { it.toArtist() } }
+            .distinctUntilChanged()
+            .onEach { artists ->
+                val missingImages = artists.missingImageCandidates()
+                if (missingImages.isNotEmpty()) {
+                    currentSongArtistPrefetchJob?.cancel()
+                    currentSongArtistPrefetchJob = repositoryScope.launch {
+                        artistImageRepository.prefetchArtistImages(missingImages)
+                    }
+                }
+            }
+            .flowOn(Dispatchers.IO)
     }
 
     override fun getSongsForArtist(artistId: Long): Flow<List<Song>> {

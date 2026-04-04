@@ -5,15 +5,23 @@ import android.content.ContentValues
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.media.MediaScannerConnection
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.core.net.toUri
 import com.kyant.taglib.Picture
 import com.kyant.taglib.TagLib
+import com.rve.musicplayer.data.database.ArtistEntity
 import com.rve.musicplayer.data.database.MusicDao
+import com.rve.musicplayer.data.database.SongArtistCrossRef
 import com.rve.musicplayer.data.database.TelegramDao // Added
 import com.rve.musicplayer.data.database.TelegramSongEntity // Added
+import com.rve.musicplayer.data.database.serializeArtistRefs
+import com.rve.musicplayer.data.model.ArtistRef
+import com.rve.musicplayer.data.preferences.UserPreferencesRepository
+import com.rve.musicplayer.data.worker.collectArtistNames
 import com.rve.musicplayer.utils.AlbumArtUtils
 import com.rve.musicplayer.utils.LocalArtworkUri
 import kotlinx.coroutines.flow.first // Added
@@ -51,7 +59,8 @@ enum class MetadataEditError {
 class SongMetadataEditor(
     private val context: Context,
     private val musicDao: MusicDao,
-    private val telegramDao: TelegramDao // Added
+    private val telegramDao: TelegramDao, // Added
+    private val userPreferencesRepository: UserPreferencesRepository
 ) {
 
     // File extensions that require VorbisJava (TagLib has issues with these via file descriptors)
@@ -99,6 +108,90 @@ class SongMetadataEditor(
         return parent.canWrite()
     }
 
+    private suspend fun updateSongArtistMetadata(
+        songId: Long,
+        title: String,
+        artist: String,
+        album: String,
+        genre: String?,
+        trackNumber: Int,
+        discNumber: Int?
+    ) {
+        val existingArtists = musicDao.getAllArtistsListRaw()
+        val existingByNormalizedName =
+            existingArtists.associateBy { it.name.trim().lowercase(Locale.ROOT) }.toMutableMap()
+        var nextArtistId = (musicDao.getMaxArtistId() ?: 0L) + 1L
+
+        val artistDelimiters = userPreferencesRepository.artistDelimitersFlow.first()
+        val wordDelimiters = userPreferencesRepository.artistWordDelimitersFlow.first()
+        val extractFromTitle = userPreferencesRepository.extractArtistsFromTitleFlow.first()
+
+        val artistNames =
+            collectArtistNames(
+                rawArtistName = artist,
+                title = title,
+                artistDelimiters = artistDelimiters,
+                wordDelimiters = wordDelimiters,
+                extractFromTitle = extractFromTitle
+            ).ifEmpty {
+                listOf(artist.trim().ifEmpty { "Unknown Artist" })
+            }
+
+        val artistsToEnsure = mutableListOf<ArtistEntity>()
+        val artistRefs = artistNames.mapIndexed { index, rawName ->
+            val normalizedName = rawName.trim()
+            val normalizedKey = normalizedName.lowercase(Locale.ROOT)
+            val existingArtist = existingByNormalizedName[normalizedKey]
+            val artistId =
+                if (existingArtist != null) {
+                    existingArtist.id
+                } else {
+                    val newId = nextArtistId++
+                    val newArtist = ArtistEntity(
+                        id = newId,
+                        name = normalizedName,
+                        trackCount = 0,
+                        imageUrl = null,
+                        customImageUri = null
+                    )
+                    existingByNormalizedName[normalizedKey] = newArtist
+                    artistsToEnsure += newArtist
+                    newId
+                }
+
+            ArtistRef(
+                id = artistId,
+                name = normalizedName,
+                isPrimary = index == 0
+            )
+        }.filter { it.name.isNotEmpty() }
+
+        val primaryArtistId = artistRefs.firstOrNull()?.id ?: -1L
+        val artistsJson = serializeArtistRefs(artistRefs)
+        val crossRefs = artistRefs.map { ref ->
+            SongArtistCrossRef(
+                songId = songId,
+                artistId = ref.id,
+                isPrimary = ref.isPrimary
+            )
+        }
+
+        musicDao.updateSongMetadataAndArtistLinks(
+            songId = songId,
+            title = title,
+            artist = artist,
+            artistId = primaryArtistId,
+            artistsJson = artistsJson,
+            album = album,
+            genre = genre,
+            trackNumber = trackNumber,
+            discNumber = discNumber,
+            artistsToEnsure = artistsToEnsure,
+            crossRefs = crossRefs
+        )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
     fun editSongMetadata(
         songId: Long,
         newTitle: String,
@@ -136,7 +229,7 @@ class SongMetadataEditor(
             }
 
             if (filePath.isNullOrBlank() && !isTelegramSong) {
-                Log.e(TAG, "Could not get file path for songId: $songId")
+                Timber.tag(TAG).e("Could not get file path for songId: $songId")
                 return SongMetadataEditResult(
                     success = false,
                     updatedAlbumArtUri = null,
@@ -147,7 +240,7 @@ class SongMetadataEditor(
 
             // Check write permissions before attempting edit
             if (!filePath.isNullOrBlank() && !checkFileWritePermission(filePath)) {
-                Log.e(TAG, "No write permission for file: $filePath")
+                Timber.tag(TAG).e("No write permission for file: $filePath")
                 return SongMetadataEditResult(
                     success = false,
                     updatedAlbumArtUri = null,
@@ -173,14 +266,16 @@ class SongMetadataEditor(
             
             val fileUpdateSuccess = if (!fileExists) {
                 if (isTelegramSong) {
-                     Log.w(TAG, "METADATA_EDIT: Telegram file not found (streaming?). Skipping file tags, updating DB only.")
+                    Timber.tag(TAG)
+                        .w("METADATA_EDIT: Telegram file not found (streaming?). Skipping file tags, updating DB only.")
                      true
                 } else {
-                     Log.e(TAG, "METADATA_EDIT: File does not exist: $finalFilePath")
+                    Timber.tag(TAG).e("METADATA_EDIT: File does not exist: $finalFilePath")
                      false
                 }
             } else if (useJAudioTaggerPrimary) {
-                Log.d(TAG, "METADATA_EDIT: Using JAudioTagger as primary for $extension file: $finalFilePath")
+                Timber.tag(TAG)
+                    .d("METADATA_EDIT: Using JAudioTagger as primary for $extension file: $finalFilePath")
                 updateFileMetadataWithJAudioTagger(
                     filePath = finalFilePath,
                     newTitle = newTitle,
@@ -193,7 +288,7 @@ class SongMetadataEditor(
                     coverArtUpdate = coverArtUpdate
                 )
             } else {
-                Log.d(TAG, "METADATA_EDIT: Using TagLib for $extension file: $finalFilePath")
+                Timber.tag(TAG).d("METADATA_EDIT: Using TagLib for $extension file: $finalFilePath")
                 val tagLibSuccess = updateFileMetadataWithTagLib(
                     filePath = finalFilePath,
                     newTitle = newTitle,
@@ -208,7 +303,8 @@ class SongMetadataEditor(
                 
                 // Fallback to JAudioTagger if TagLib fails for standard formats
                 if (!tagLibSuccess) {
-                    Log.w(TAG, "METADATA_EDIT: TagLib failed for $extension, falling back to JAudioTagger")
+                    Timber.tag(TAG)
+                        .w("METADATA_EDIT: TagLib failed for $extension, falling back to JAudioTagger")
                     updateFileMetadataWithJAudioTagger(
                         filePath = finalFilePath,
                         newTitle = newTitle,
@@ -226,7 +322,7 @@ class SongMetadataEditor(
             }
 
             if (!fileUpdateSuccess) {
-                Log.e(TAG, "Failed to update file metadata for songId: $songId")
+                Timber.tag(TAG).e("Failed to update file metadata for songId: $songId")
                 return SongMetadataEditResult(
                     success = false,
                     updatedAlbumArtUri = null,
@@ -279,14 +375,14 @@ class SongMetadataEditor(
             // 3. Update local database and save cover art preview
             var storedCoverArtUri: String? = null
             runBlocking {
-                musicDao.updateSongMetadata(
-                    songId,
-                    newTitle,
-                    newArtist,
-                    newAlbum,
-                    normalizedGenre,
-                    newTrackNumber,
-                    newDiscNumber
+                updateSongArtistMetadata(
+                    songId = songId,
+                    title = newTitle,
+                    artist = newArtist,
+                    album = newAlbum,
+                    genre = normalizedGenre,
+                    trackNumber = newTrackNumber,
+                    discNumber = newDiscNumber
                 )
 
                 coverArtUpdate?.let {
@@ -301,7 +397,7 @@ class SongMetadataEditor(
                 forceMediaRescan(finalFilePath)
             }
 
-            Log.e(TAG, "METADATA_EDIT: Successfully updated metadata for songId: $songId")
+            Timber.tag(TAG).e("METADATA_EDIT: Successfully updated metadata for songId: $songId")
             SongMetadataEditResult(success = true, updatedAlbumArtUri = storedCoverArtUri)
 
         } catch (e: SecurityException) {
@@ -384,21 +480,23 @@ class SongMetadataEditor(
                 
                 val bitsPerSample = (((header[20].toInt() and 0x01) shl 4) or
                     ((header[21].toInt() and 0xF0) shr 4)) + 1
-                
-                Log.d(TAG, "FLAC analysis: sampleRate=$sampleRate, bitsPerSample=$bitsPerSample")
+
+                Timber.tag(TAG)
+                    .d("FLAC analysis: sampleRate=$sampleRate, bitsPerSample=$bitsPerSample")
                 
                 // Consider problematic if sample rate > 96kHz or bit depth > 24
                 val isProblematic = sampleRate > 96000 || bitsPerSample > 24
                 
                 if (isProblematic) {
-                    Log.w(TAG, "FLAC file may be problematic: $filePath (${sampleRate}Hz, ${bitsPerSample}bit)")
+                    Timber.tag(TAG)
+                        .w("FLAC file may be problematic: $filePath (${sampleRate}Hz, ${bitsPerSample}bit)")
                     FlacAnalysisResult.Problematic(sampleRate, bitsPerSample)
                 } else {
                     FlacAnalysisResult.Safe(sampleRate, bitsPerSample)
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Could not analyze FLAC file: $filePath", e)
+            Timber.tag(TAG).w(e, "Could not analyze FLAC file: $filePath")
             // If we can't analyze, assume it might be problematic
             FlacAnalysisResult.Unknown
         }
@@ -425,8 +523,10 @@ class SongMetadataEditor(
         // Check for problematic FLAC files first
         when (val flacResult = isProblematicFlacFile(filePath)) {
             is FlacAnalysisResult.Problematic -> {
-                Log.w(TAG, "TAGLIB: Skipping file modification for high-resolution FLAC (${flacResult.sampleRate}Hz, ${flacResult.bitsPerSample}bit)")
-                Log.w(TAG, "TAGLIB: High-res FLAC files may not work correctly with TagLib. Will update MediaStore only.")
+                Timber.tag(TAG)
+                    .w("TAGLIB: Skipping file modification for high-resolution FLAC (${flacResult.sampleRate}Hz, ${flacResult.bitsPerSample}bit)")
+                Timber.tag(TAG)
+                    .w("TAGLIB: High-res FLAC files may not work correctly with TagLib. Will update MediaStore only.")
                 // Return true to indicate we should proceed with MediaStore-only update
                 // The calling code will still update MediaStore and local DB
                 return true
@@ -437,18 +537,19 @@ class SongMetadataEditor(
         return try {
             val audioFile = File(filePath)
             if (!audioFile.exists()) {
-                Log.e(TAG, "TAGLIB: Audio file does not exist: $filePath")
+                Timber.tag(TAG).e("TAGLIB: Audio file does not exist: $filePath")
                 return false
             }
-            Log.e(TAG, "TAGLIB: Opening file: $filePath")
+            Timber.tag(TAG).e("TAGLIB: Opening file: $filePath")
 
             // Open file with read/write permissions
             ParcelFileDescriptor.open(audioFile, ParcelFileDescriptor.MODE_READ_WRITE).use { fd ->
                 // Get existing metadata or create empty map
-                Log.e(TAG, "TAGLIB: Getting existing metadata...")
+                Timber.tag(TAG).e("TAGLIB: Getting existing metadata...")
                 val metadataFd = fd.dup()
                 val existingMetadata = TagLib.getMetadata(metadataFd.detachFd())
-                Log.e(TAG, "TAGLIB: Existing metadata: ${existingMetadata?.propertyMap?.keys}")
+                Timber.tag(TAG)
+                    .e("TAGLIB: Existing metadata: ${existingMetadata?.propertyMap?.keys}")
                 val propertyMap = HashMap(existingMetadata?.propertyMap ?: emptyMap())
 
                 // Update metadata fields
@@ -464,14 +565,14 @@ class SongMetadataEditor(
                     propertyMap.remove("DISCNUMBER")
                 }
                 propertyMap["ALBUMARTIST"] = arrayOf(newArtist)
-                Log.e(TAG, "TAGLIB: Updated property map, saving...")
+                Timber.tag(TAG).e("TAGLIB: Updated property map, saving...")
 
                 // Save metadata
                 val saveFd = fd.dup()
                 val metadataSaved = TagLib.savePropertyMap(saveFd.detachFd(), propertyMap)
-                Log.e(TAG, "TAGLIB: savePropertyMap result: $metadataSaved")
+                Timber.tag(TAG).e("TAGLIB: savePropertyMap result: $metadataSaved")
                 if (!metadataSaved) {
-                    Log.e(TAG, "TAGLIB: Failed to save metadata for file: $filePath")
+                    Timber.tag(TAG).e("TAGLIB: Failed to save metadata for file: $filePath")
                     return false
                 }
 
@@ -496,9 +597,11 @@ class SongMetadataEditor(
                         val pictureFd = fd.dup()
                         val coverSaved = TagLib.savePictures(pictureFd.detachFd(), it)
                         if (!coverSaved) {
-                            Log.w(TAG, "TAGLIB: Failed to save cover art, but metadata was saved")
+                            Timber.tag(TAG)
+                                .w("TAGLIB: Failed to save cover art, but metadata was saved")
                         } else {
-                            Log.d(TAG, "TAGLIB: Successfully ${if (update.isDeletion) "removed" else "embedded"} cover art")
+                            Timber.tag(TAG)
+                                .d("TAGLIB: Successfully ${if (update.isDeletion) "removed" else "embedded"} cover art")
                         }
                     }
                 }
@@ -510,14 +613,14 @@ class SongMetadataEditor(
                     raf.fd.sync()
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Could not sync file, changes should still be persisted", e)
+                Timber.tag(TAG).w(e, "Could not sync file, changes should still be persisted")
             }
 
-            Log.e(TAG, "TAGLIB: SUCCESS - Updated file metadata: ${audioFile.path}")
+            Timber.tag(TAG).e("TAGLIB: SUCCESS - Updated file metadata: ${audioFile.path}")
             true
 
         } catch (e: Exception) {
-            Log.e(TAG, "TAGLIB ERROR: ${e.javaClass.simpleName}: ${e.message}")
+            Timber.tag(TAG).e("TAGLIB ERROR: ${e.javaClass.simpleName}: ${e.message}")
             e.printStackTrace()
             false
         }
@@ -572,7 +675,7 @@ class SongMetadataEditor(
             coverArtUpdate?.let { update ->
                 if (update.isDeletion) {
                     tag.deleteArtworkField()
-                    Log.d(TAG, "JAUDIOTAGGER: Removed cover art")
+                    Timber.tag(TAG).d("JAUDIOTAGGER: Removed cover art")
                 } else if (update.bytes != null) {
                     try {
                         tag.deleteArtworkField()
@@ -588,18 +691,21 @@ class SongMetadataEditor(
                         artwork.height = options.outHeight
                         
                         tag.setField(artwork)
-                        Log.d(TAG, "JAUDIOTAGGER: Embedded new cover art (${update.mimeType}, ${options.outWidth}x${options.outHeight})")
+                        Timber.tag(TAG)
+                            .d("JAUDIOTAGGER: Embedded new cover art (${update.mimeType}, ${options.outWidth}x${options.outHeight})")
                     } catch (e: Exception) {
-                        Log.e(TAG, "JAUDIOTAGGER: Failed to create artwork from bytes", e)
+                        Timber.tag(TAG).e(e, "JAUDIOTAGGER: Failed to create artwork from bytes")
                     }
+                } else {
+                    Timber.tag(TAG).w("JAUDIOTAGGER: Ignoring invalid CoverArtUpdate with no bytes and no deletion flag")
                 }
             }
 
             audioFile.commit()
-            Log.d(TAG, "JAUDIOTAGGER: SUCCESS - Updated file metadata: $filePath")
+            Timber.tag(TAG).d("JAUDIOTAGGER: SUCCESS - Updated file metadata: $filePath")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "JAUDIOTAGGER ERROR: ${e.javaClass.simpleName}: ${e.message}")
+            Timber.tag(TAG).e("JAUDIOTAGGER ERROR: ${e.javaClass.simpleName}: ${e.message}")
             e.printStackTrace()
             false
         }
@@ -622,17 +728,17 @@ class SongMetadataEditor(
         
         return try {
             if (!audioFile.exists()) {
-                Log.e(TAG, "VORBISJAVA: Audio file does not exist: $filePath")
+                Timber.tag(TAG).e("VORBISJAVA: Audio file does not exist: $filePath")
                 return false
             }
 
-            Log.e(TAG, "VORBISJAVA: Reading Opus file: $filePath")
+            Timber.tag(TAG).e("VORBISJAVA: Reading Opus file: $filePath")
             
             // Read existing file
             val opusFile = OpusFile(audioFile)
             val tags = opusFile.tags ?: OpusTags()
-            
-            Log.e(TAG, "VORBISJAVA: Existing tags: ${tags.allComments}")
+
+            Timber.tag(TAG).e("VORBISJAVA: Existing tags: ${tags.allComments}")
             
             // Clear existing tags and set new ones
             tags.removeComments("TITLE")
@@ -655,13 +761,13 @@ class SongMetadataEditor(
             if (newLyrics.isNotBlank()) tags.addComment("LYRICS", newLyrics)
             if (newTrackNumber > 0) tags.addComment("TRACKNUMBER", newTrackNumber.toString())
             if (newDiscNumber != null && newDiscNumber > 0) tags.addComment("DISCNUMBER", newDiscNumber.toString())
-            
-            Log.e(TAG, "VORBISJAVA: Updated tags: ${tags.allComments}")
+
+            Timber.tag(TAG).e("VORBISJAVA: Updated tags: ${tags.allComments}")
             
             // Create temp file with same extension as original
             tempFile = File(audioFile.parentFile, "${audioFile.nameWithoutExtension}_temp.${originalExtension}")
             
-            Log.e(TAG, "VORBISJAVA: Writing to temp file: ${tempFile.path}")
+            Timber.tag(TAG).e("VORBISJAVA: Writing to temp file: ${tempFile.path}")
             FileOutputStream(tempFile).use { fos ->
                 val newOpusFile = OpusFile(fos, opusFile.info, tags)
                 
@@ -678,23 +784,24 @@ class SongMetadataEditor(
             
             // Verify temp file was created and has content
             if (!tempFile.exists() || tempFile.length() == 0L) {
-                Log.e(TAG, "VORBISJAVA: Temp file creation failed or is empty")
+                Timber.tag(TAG).e("VORBISJAVA: Temp file creation failed or is empty")
                 return false
             }
-            Log.e(TAG, "VORBISJAVA: Temp file size: ${tempFile.length()} bytes, original: ${audioFile.length()} bytes")
+            Timber.tag(TAG)
+                .e("VORBISJAVA: Temp file size: ${tempFile.length()} bytes, original: ${audioFile.length()} bytes")
             
             // Create backup of original file before replacing
             backupFile = File(audioFile.parentFile, "${audioFile.nameWithoutExtension}_backup.${originalExtension}")
             if (!audioFile.renameTo(backupFile)) {
-                Log.e(TAG, "VORBISJAVA: Failed to create backup of original file")
+                Timber.tag(TAG).e("VORBISJAVA: Failed to create backup of original file")
                 tempFile.delete()
                 return false
             }
-            Log.e(TAG, "VORBISJAVA: Created backup: ${backupFile.path}")
+            Timber.tag(TAG).e("VORBISJAVA: Created backup: ${backupFile.path}")
             
             // Rename temp file to original name
             if (!tempFile.renameTo(audioFile)) {
-                Log.e(TAG, "VORBISJAVA: Failed to rename temp file to original")
+                Timber.tag(TAG).e("VORBISJAVA: Failed to rename temp file to original")
                 // Restore backup
                 backupFile.renameTo(audioFile)
                 return false
@@ -702,11 +809,11 @@ class SongMetadataEditor(
             
             // Delete backup on success
             backupFile.delete()
-            Log.e(TAG, "VORBISJAVA: SUCCESS - Updated file metadata: ${audioFile.path}")
+            Timber.tag(TAG).e("VORBISJAVA: SUCCESS - Updated file metadata: ${audioFile.path}")
             true
 
         } catch (e: Exception) {
-            Log.e(TAG, "VORBISJAVA ERROR: ${e.javaClass.simpleName}: ${e.message}")
+            Timber.tag(TAG).e("VORBISJAVA ERROR: ${e.javaClass.simpleName}: ${e.message}")
             e.printStackTrace()
             
             // Cleanup on error
@@ -719,6 +826,7 @@ class SongMetadataEditor(
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.R)
     private fun updateMediaStoreMetadata(
         songId: Long,
         title: String,
@@ -758,7 +866,7 @@ class SongMetadataEditor(
         try {
             val file = File(filePath)
             if (file.exists()) {
-                Log.e(TAG, "RESCAN: Starting MediaScanner for: $filePath")
+                Timber.tag(TAG).e("RESCAN: Starting MediaScanner for: $filePath")
                 // Use MediaScannerConnection to force rescan
                 val latch = java.util.concurrent.CountDownLatch(1)
                 MediaScannerConnection.scanFile(
@@ -766,24 +874,24 @@ class SongMetadataEditor(
                     arrayOf(filePath),
                     null
                 ) { path, uri ->
-                    Log.e(TAG, "RESCAN: Completed for: $path, new URI: $uri")
+                    Timber.tag(TAG).e("RESCAN: Completed for: $path, new URI: $uri")
                     latch.countDown()
                 }
                 // Wait for scan to complete (max 5 seconds)
                 val completed = latch.await(5, java.util.concurrent.TimeUnit.SECONDS)
                 if (!completed) {
-                    Log.w(TAG, "RESCAN: MediaScanner timeout for: $filePath")
+                    Timber.tag(TAG).w("RESCAN: MediaScanner timeout for: $filePath")
                 }
             } else {
-                Log.e(TAG, "RESCAN: File does not exist: $filePath")
+                Timber.tag(TAG).e("RESCAN: File does not exist: $filePath")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "RESCAN ERROR: ${e.message}")
+            Timber.tag(TAG).e("RESCAN ERROR: ${e.message}")
         }
     }
 
     private fun getFilePathFromMediaStore(songId: Long): String? {
-        Log.e(TAG, "getFilePathFromMediaStore: Looking up songId: $songId")
+        Timber.tag(TAG).e("getFilePathFromMediaStore: Looking up songId: $songId")
         return try {
             context.contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
@@ -792,18 +900,19 @@ class SongMetadataEditor(
                 arrayOf(songId.toString()),
                 null
             )?.use { cursor ->
-                Log.e(TAG, "getFilePathFromMediaStore: Cursor count: ${cursor.count}")
+                Timber.tag(TAG).e("getFilePathFromMediaStore: Cursor count: ${cursor.count}")
                 if (cursor.moveToFirst()) {
                     val path = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA))
-                    Log.e(TAG, "getFilePathFromMediaStore: Found path: $path")
+                    Timber.tag(TAG).e("getFilePathFromMediaStore: Found path: $path")
                     path
                 } else {
-                    Log.e(TAG, "getFilePathFromMediaStore: No file found for songId: $songId")
+                    Timber.tag(TAG)
+                        .e("getFilePathFromMediaStore: No file found for songId: $songId")
                     null
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "getFilePathFromMediaStore: Error querying MediaStore: ${e.message}")
+            Timber.tag(TAG).e("getFilePathFromMediaStore: Error querying MediaStore: ${e.message}")
             null
         }
     }

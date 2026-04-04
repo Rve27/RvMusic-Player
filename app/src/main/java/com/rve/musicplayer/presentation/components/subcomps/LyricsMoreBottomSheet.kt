@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -35,9 +37,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +49,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.rve.musicplayer.R
 import com.rve.musicplayer.data.model.Lyrics
+import com.rve.musicplayer.presentation.components.ToggleSegmentButton
 import com.rve.musicplayer.presentation.components.player.BottomToggleRow
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -207,50 +212,78 @@ fun LyricsMoreBottomSheet(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                 Text(
-                     modifier = Modifier
-                         .padding(start = 6.dp, bottom = 6.dp),
-                     text = "Appearance",
-                     color = accentColor,
-                     style = MaterialTheme.typography.bodyLargeEmphasized
+                Text(
+                    modifier = Modifier
+                        .padding(start = 6.dp, bottom = 6.dp),
+                    text = "Appearance",
+                    color = accentColor,
+                    style = MaterialTheme.typography.bodyLargeEmphasized
                  )
-                ListItem(
-                    headlineContent = { Text("Alignment") },
-                    leadingContent = {
-                        Icon(
-                            imageVector = when (lyricsAlignment) {
-                                "center" -> Icons.Rounded.FormatAlignCenter
-                                "right" -> Icons.AutoMirrored.Rounded.FormatAlignRight
-                                else -> Icons.AutoMirrored.Rounded.FormatAlignLeft
-                            },
-                            contentDescription = null
-                        )
-                    },
-                    trailingContent = {
-                        Text(
-                            text = lyricsAlignment.replaceFirstChar { it.uppercase() },
-                            color = contentColor.copy(alpha = 0.7f),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    },
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(24.dp))
                         .background(itemBackgroundColor)
-                        .clickable {
-                            val next = when (lyricsAlignment) {
-                                "left" -> "center"
-                                "center" -> "right"
-                                else -> "left"
-                            }
-                            onLyricsAlignmentChange(next)
-                        },
-                    colors = ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
-                        headlineColor = contentColor,
-                        leadingIconColor = contentColor
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Alignment",
+                        color = contentColor,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
                     )
-                )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ToggleSegmentButton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            active = lyricsAlignment == "left",
+                            activeColor = accentColor,
+                            inactiveColor = containerColor,
+                            activeContentColor = onAccentColor,
+                            inactiveContentColor = contentColor.copy(alpha = 0.78f),
+                            activeCornerRadius = 50.dp,
+                            onClick = { onLyricsAlignmentChange("left") },
+                            imageVector = Icons.AutoMirrored.Rounded.FormatAlignLeft,
+                            contentDesc = "Align lyrics left"
+                        )
+
+                        ToggleSegmentButton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            active = lyricsAlignment == "center",
+                            activeColor = accentColor,
+                            inactiveColor = containerColor,
+                            activeContentColor = onAccentColor,
+                            inactiveContentColor = contentColor.copy(alpha = 0.78f),
+                            activeCornerRadius = 50.dp,
+                            onClick = { onLyricsAlignmentChange("center") },
+                            imageVector = Icons.Rounded.FormatAlignCenter,
+                            contentDesc = "Align lyrics center"
+                        )
+
+                        ToggleSegmentButton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            active = lyricsAlignment == "right",
+                            activeColor = accentColor,
+                            inactiveColor = containerColor,
+                            activeContentColor = onAccentColor,
+                            inactiveContentColor = contentColor.copy(alpha = 0.78f),
+                            activeCornerRadius = 50.dp,
+                            onClick = { onLyricsAlignmentChange("right") },
+                            imageVector = Icons.AutoMirrored.Rounded.FormatAlignRight,
+                            contentDesc = "Align lyrics right"
+                        )
+                    }
+                }
             }
 
             // Control Settings Group
@@ -453,7 +486,8 @@ fun LyricsMoreBottomSheet(
                  BottomToggleRow(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(84.dp),
+                        .height(74.dp)
+                        .padding(horizontal = 20.dp),
                     isShuffleEnabled = isShuffleEnabled,
                     repeatMode = repeatMode,
                     isFavoriteProvider = isFavoriteProvider,

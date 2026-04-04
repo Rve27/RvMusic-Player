@@ -1,383 +1,102 @@
 package com.theveloper.pixelplay.data.database
 
-import android.content.Context
-import androidx.sqlite.db.SupportSQLiteDatabase
-import androidx.sqlite.db.SupportSQLiteOpenHelper
+import androidx.room.testing.MigrationTestHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
-import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
-import org.junit.Test
-import org.junit.runner.RunWith
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import java.util.UUID
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class PixelPlayDatabaseMigrationTest {
 
-    private val context = ApplicationProvider.getApplicationContext<Context>()
-    private val databaseNames = mutableListOf<String>()
+    @get:Rule
+    val helper = MigrationTestHelper(
+        InstrumentationRegistry.getInstrumentation(),
+        PixelPlayDatabase::class.java.canonicalName,
+        FrameworkSQLiteOpenHelperFactory()
+    )
 
     @After
     fun tearDown() {
-        databaseNames.forEach(context::deleteDatabase)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        for (version in 25..33) {
+            context.deleteDatabase(databaseNameFor(version))
+        }
+        context.deleteDatabase(DB_NAME_33_TO_34)
     }
 
     @Test
-    fun migration23to24_addsDateAddedAndIndexes_whenSongsColumnIsMissing() {
-        withDatabase(version = 23) { db ->
-            createSupportingTables(db)
-            db.execSQL("INSERT INTO artists (id) VALUES (10)")
-            db.execSQL("INSERT INTO albums (id) VALUES (20)")
-            db.execSQL(
-                """
-                    INSERT INTO songs (
-                        id,
-                        title,
-                        artist_name,
-                        artist_id,
-                        album_artist,
-                        album_name,
-                        album_id,
-                        content_uri_string,
-                        album_art_uri_string,
-                        duration,
-                        genre,
-                        file_path,
-                        parent_directory_path,
-                        is_favorite,
-                        lyrics,
-                        track_number,
-                        year,
-                        mime_type,
-                        bitrate,
-                        sample_rate,
-                        telegram_chat_id,
-                        telegram_file_id
-                    ) VALUES (
-                        1,
-                        'Song A',
-                        'Artist A',
-                        10,
-                        NULL,
-                        'Album A',
-                        20,
-                        'content://song/1',
-                        NULL,
-                        180000,
-                        'Pop',
-                        '/music/song-a.mp3',
-                        '/music',
-                        0,
-                        NULL,
-                        1,
-                        2025,
-                        'audio/mpeg',
-                        320000,
-                        44100,
-                        NULL,
-                        NULL
-                    )
-                """.trimIndent()
-            )
+    fun migrateEveryExportedSchemaToLatest() {
+        for (startVersion in 25..33) {
+            helper.createDatabase(databaseNameFor(startVersion), startVersion).close()
 
-            PixelPlayDatabase.MIGRATION_23_24.migrate(db)
-
-            assertTrue("songs table should contain date_added", "date_added" in getTableColumns(db, "songs"))
-            assertTrue(
-                "songs table should expose every expected index",
-                getIndexNames(db, "songs").containsAll(EXPECTED_SONG_INDEXES)
-            )
-
-            db.query("SELECT title, date_added FROM songs WHERE id = 1").use { cursor ->
-                assertTrue(cursor.moveToFirst())
-                assertEquals("Song A", cursor.getString(0))
-                assertEquals(0L, cursor.getLong(1))
-            }
+            helper.runMigrationsAndValidate(
+                databaseNameFor(startVersion),
+                PixelPlayDatabaseVersion.LATEST,
+                true,
+                *ALL_MIGRATIONS
+            ).close()
         }
     }
 
     @Test
-    fun migration23to24_recreatesSongsTable_whenItIsMissing() {
-        withDatabase(version = 23) { db ->
-            createSupportingTables(db, includeSongsTable = false)
+    fun migration33To34AddsArtistsJsonColumnToSongs() {
+        helper.createDatabase(DB_NAME_33_TO_34, 33).close()
 
-            PixelPlayDatabase.MIGRATION_23_24.migrate(db)
+        helper.runMigrationsAndValidate(
+            DB_NAME_33_TO_34,
+            PixelPlayDatabaseVersion.LATEST,
+            true,
+            PixelPlayDatabase.MIGRATION_33_34
+        ).let { db ->
+            val cursor = db.query("PRAGMA table_info(`songs`)")
+            try {
+                val nameIndex = cursor.getColumnIndex("name")
+                val defaultValueIndex = cursor.getColumnIndex("dflt_value")
+                var foundArtistsJson = false
+                var defaultValue: String? = null
 
-            val columns = getTableColumns(db, "songs")
-            assertTrue(
-                "recreated songs table should include the required columns",
-                setOf("id", "title", "content_uri_string", "date_added").all(columns::contains)
-            )
-            assertTrue(
-                "recreated songs table should expose every expected index",
-                getIndexNames(db, "songs").containsAll(EXPECTED_SONG_INDEXES)
-            )
-        }
-    }
-
-    @Test
-    fun migration30to31_addsDiscNumberWithNullDefault_whenColumnIsMissing() {
-        withDatabase(version = 30) { db ->
-            createSupportingTables(db)
-            db.execSQL("INSERT INTO artists (id) VALUES (10)")
-            db.execSQL("INSERT INTO albums (id) VALUES (20)")
-            insertSong(db)
-
-            PixelPlayDatabase.MIGRATION_30_31.migrate(db)
-
-            assertTrue("songs table should contain disc_number", "disc_number" in getTableColumns(db, "songs"))
-            assertEquals("null", getColumnDefaultValue(db, "songs", "disc_number")?.lowercase())
-            assertTrue(
-                "songs table should expose every expected index",
-                getIndexNames(db, "songs").containsAll(EXPECTED_SONG_INDEXES)
-            )
-
-            db.query("SELECT title, disc_number FROM songs WHERE id = 1").use { cursor ->
-                assertTrue(cursor.moveToFirst())
-                assertEquals("Song A", cursor.getString(0))
-                assertTrue(cursor.isNull(1))
-            }
-        }
-    }
-
-    @Test
-    fun migration30to31_recreatesSongsTable_whenDiscNumberAlreadyExistsWithoutDefault() {
-        withDatabase(version = 30) { db ->
-            createSupportingTables(
-                db,
-                discNumberColumnSql = "disc_number INTEGER"
-            )
-            db.execSQL("INSERT INTO artists (id) VALUES (10)")
-            db.execSQL("INSERT INTO albums (id) VALUES (20)")
-            insertSong(db, includeDiscNumber = true, discNumber = 2)
-
-            PixelPlayDatabase.MIGRATION_30_31.migrate(db)
-
-            assertEquals("null", getColumnDefaultValue(db, "songs", "disc_number")?.lowercase())
-            assertTrue(
-                "songs table should expose every expected index",
-                getIndexNames(db, "songs").containsAll(EXPECTED_SONG_INDEXES)
-            )
-
-            db.query("SELECT title, disc_number FROM songs WHERE id = 1").use { cursor ->
-                assertTrue(cursor.moveToFirst())
-                assertEquals("Song A", cursor.getString(0))
-                assertEquals(2, cursor.getInt(1))
-            }
-        }
-    }
-
-    private fun withDatabase(version: Int, block: (SupportSQLiteDatabase) -> Unit) {
-        val name = "migration-test-${UUID.randomUUID()}.db"
-        databaseNames += name
-        val helper = openHelper(name, version)
-        val db = helper.writableDatabase
-
-        try {
-            block(db)
-        } finally {
-            db.close()
-            helper.close()
-        }
-    }
-
-    private fun openHelper(name: String, version: Int): SupportSQLiteOpenHelper {
-        return FrameworkSQLiteOpenHelperFactory().create(
-            SupportSQLiteOpenHelper.Configuration.builder(context)
-                .name(name)
-                .callback(
-                    object : SupportSQLiteOpenHelper.Callback(version) {
-                        override fun onCreate(db: SupportSQLiteDatabase) = Unit
-
-                        override fun onUpgrade(
-                            db: SupportSQLiteDatabase,
-                            oldVersion: Int,
-                            newVersion: Int
-                        ) = Unit
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(nameIndex) == "artists_json") {
+                        foundArtistsJson = true
+                        defaultValue = cursor.getString(defaultValueIndex)
+                        break
                     }
-                )
-                .build()
-        )
-    }
-
-    private fun createSupportingTables(
-        db: SupportSQLiteDatabase,
-        includeSongsTable: Boolean = true,
-        discNumberColumnSql: String? = null
-    ) {
-        db.execSQL("CREATE TABLE IF NOT EXISTS artists (id INTEGER NOT NULL PRIMARY KEY)")
-        db.execSQL("CREATE TABLE IF NOT EXISTS albums (id INTEGER NOT NULL PRIMARY KEY)")
-        if (includeSongsTable) {
-            val discNumberColumnSegment = discNumberColumnSql?.let { "                        $it,\n" }.orEmpty()
-            db.execSQL(
-                """
-                    CREATE TABLE IF NOT EXISTS songs (
-                        id INTEGER NOT NULL,
-                        title TEXT NOT NULL,
-                        artist_name TEXT NOT NULL,
-                        artist_id INTEGER NOT NULL,
-                        album_artist TEXT,
-                        album_name TEXT NOT NULL,
-                        album_id INTEGER NOT NULL,
-                        content_uri_string TEXT NOT NULL,
-                        album_art_uri_string TEXT,
-                        duration INTEGER NOT NULL,
-                        genre TEXT,
-                        file_path TEXT NOT NULL,
-                        parent_directory_path TEXT NOT NULL,
-                        is_favorite INTEGER NOT NULL DEFAULT 0,
-                        lyrics TEXT DEFAULT null,
-                        track_number INTEGER NOT NULL DEFAULT 0,
-${discNumberColumnSegment}
-                        year INTEGER NOT NULL DEFAULT 0,
-                        mime_type TEXT,
-                        bitrate INTEGER,
-                        sample_rate INTEGER,
-                        telegram_chat_id INTEGER,
-                        telegram_file_id INTEGER,
-                        PRIMARY KEY(id)
-                    )
-                """.trimIndent()
-            )
-        }
-        db.execSQL(
-            """
-                CREATE TABLE IF NOT EXISTS favorites (
-                    songId INTEGER NOT NULL PRIMARY KEY,
-                    isFavorite INTEGER NOT NULL,
-                    timestamp INTEGER NOT NULL
-                )
-            """.trimIndent()
-        )
-        db.execSQL(
-            """
-                CREATE TABLE IF NOT EXISTS song_engagements (
-                    song_id TEXT NOT NULL PRIMARY KEY,
-                    play_count INTEGER NOT NULL DEFAULT 0,
-                    total_play_duration_ms INTEGER NOT NULL DEFAULT 0,
-                    last_played_timestamp INTEGER NOT NULL DEFAULT 0
-                )
-            """.trimIndent()
-        )
-    }
-
-    private fun insertSong(
-        db: SupportSQLiteDatabase,
-        includeDiscNumber: Boolean = false,
-        discNumber: Int? = null
-    ) {
-        val discNumberColumnSegment = if (includeDiscNumber) ",\n                        disc_number" else ""
-        val discNumberValueSegment = if (includeDiscNumber) {
-            ",\n                        ${discNumber ?: "NULL"}"
-        } else {
-            ""
-        }
-
-        db.execSQL(
-            """
-                INSERT INTO songs (
-                    id,
-                    title,
-                    artist_name,
-                    artist_id,
-                    album_artist,
-                    album_name,
-                    album_id,
-                    content_uri_string,
-                    album_art_uri_string,
-                    duration,
-                    genre,
-                    file_path,
-                    parent_directory_path,
-                    is_favorite,
-                    lyrics,
-                    track_number,
-                    year,
-                    mime_type,
-                    bitrate,
-                    sample_rate,
-                    telegram_chat_id,
-                    telegram_file_id$discNumberColumnSegment
-                ) VALUES (
-                    1,
-                    'Song A',
-                    'Artist A',
-                    10,
-                    NULL,
-                    'Album A',
-                    20,
-                    'content://song/1',
-                    NULL,
-                    180000,
-                    'Pop',
-                    '/music/song-a.mp3',
-                    '/music',
-                    0,
-                    NULL,
-                    1,
-                    2025,
-                    'audio/mpeg',
-                    320000,
-                    44100,
-                    NULL,
-                    NULL$discNumberValueSegment
-                )
-            """.trimIndent()
-        )
-    }
-
-    private fun getTableColumns(db: SupportSQLiteDatabase, tableName: String): Set<String> {
-        val columns = mutableSetOf<String>()
-        db.query("PRAGMA table_info(`$tableName`)").use { cursor ->
-            val nameIndex = cursor.getColumnIndex("name")
-            while (cursor.moveToNext()) {
-                columns += cursor.getString(nameIndex)
-            }
-        }
-        return columns
-    }
-
-    private fun getColumnDefaultValue(
-        db: SupportSQLiteDatabase,
-        tableName: String,
-        columnName: String
-    ): String? {
-        db.query("PRAGMA table_info(`$tableName`)").use { cursor ->
-            val nameIndex = cursor.getColumnIndex("name")
-            val defaultValueIndex = cursor.getColumnIndex("dflt_value")
-            while (cursor.moveToNext()) {
-                if (cursor.getString(nameIndex) == columnName) {
-                    return cursor.getString(defaultValueIndex)
                 }
+
+                assertTrue(foundArtistsJson)
+                assertEquals("NULL", defaultValue)
+            } finally {
+                cursor.close()
+                db.close()
             }
         }
-        return null
     }
 
-    private fun getIndexNames(db: SupportSQLiteDatabase, tableName: String): Set<String> {
-        val indexNames = mutableSetOf<String>()
-        db.query("PRAGMA index_list(`$tableName`)").use { cursor ->
-            val nameIndex = cursor.getColumnIndex("name")
-            while (cursor.moveToNext()) {
-                indexNames += cursor.getString(nameIndex)
-            }
-        }
-        return indexNames
+    private fun databaseNameFor(startVersion: Int): String = "migration-test-$startVersion"
+
+    private object PixelPlayDatabaseVersion {
+        const val LATEST = 34
     }
 
-    private companion object {
-        val EXPECTED_SONG_INDEXES = setOf(
-            "index_songs_title",
-            "index_songs_album_id",
-            "index_songs_artist_id",
-            "index_songs_artist_name",
-            "index_songs_genre",
-            "index_songs_parent_directory_path",
-            "index_songs_content_uri_string",
-            "index_songs_date_added",
-            "index_songs_duration"
+    companion object {
+        private const val DB_NAME_33_TO_34 = "migration-test-33-to-34"
+
+        private val ALL_MIGRATIONS = arrayOf(
+            PixelPlayDatabase.MIGRATION_25_26,
+            PixelPlayDatabase.MIGRATION_26_27,
+            PixelPlayDatabase.MIGRATION_27_28,
+            PixelPlayDatabase.MIGRATION_28_29,
+            PixelPlayDatabase.MIGRATION_29_30,
+            PixelPlayDatabase.MIGRATION_30_31,
+            PixelPlayDatabase.MIGRATION_31_32,
+            PixelPlayDatabase.MIGRATION_32_33,
+            PixelPlayDatabase.MIGRATION_33_34
         )
     }
 }

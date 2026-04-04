@@ -27,17 +27,10 @@ data class AlbumEntity(
     @ColumnInfo(name = "year") val year: Int
 )
 
-private fun mediaStoreAlbumArtUri(albumId: Long): String {
-    return android.content.ContentUris.withAppendedId(
-        android.net.Uri.parse("content://media/external/audio/albumart"),
-        albumId
-    ).toString()
-}
-
 fun AlbumEntity.toAlbum(): Album {
     val effectiveAlbumArtUri = when {
-        this.albumArtUriString.isNullOrBlank() -> mediaStoreAlbumArtUri(this.id)
-        LocalArtworkUri.looksLikeVolatileArtworkUri(this.albumArtUriString) -> mediaStoreAlbumArtUri(this.id)
+        this.albumArtUriString.isNullOrBlank() -> null
+        LocalArtworkUri.looksLikeVolatileArtworkUri(this.albumArtUriString) -> null
         else -> this.albumArtUriString
     }
 

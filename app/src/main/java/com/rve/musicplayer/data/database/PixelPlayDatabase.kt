@@ -31,7 +31,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         NavidromePlaylistEntity::class,
         TelegramTopicEntity::class
     ],
-         version = 33, // Add album date_added column
+         version = 34, // Add artists_json to songs for efficient multi-artist loading
 
     exportSchema = true
 )
@@ -1179,6 +1179,12 @@ abstract class PixelPlayDatabase : RoomDatabase() {
                         )
                     """.trimIndent()
                 )
+            }
+        }
+
+        val MIGRATION_33_34 = object : Migration(33, 34) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE songs ADD COLUMN artists_json TEXT DEFAULT NULL")
             }
         }
 

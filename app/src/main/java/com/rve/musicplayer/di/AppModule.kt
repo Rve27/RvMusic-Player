@@ -133,7 +133,8 @@ object AppModule {
             PixelPlayDatabase.MIGRATION_29_30,
             PixelPlayDatabase.MIGRATION_30_31,
             PixelPlayDatabase.MIGRATION_31_32,
-            PixelPlayDatabase.MIGRATION_32_33
+            PixelPlayDatabase.MIGRATION_32_33,
+            PixelPlayDatabase.MIGRATION_33_34
         )
             .addCallback(
                 object : RoomDatabase.Callback() {
@@ -363,9 +364,10 @@ object AppModule {
     fun provideSongMetadataEditor(
         @ApplicationContext context: Context,
         musicDao: MusicDao,
-        telegramDao: com.rve.musicplayer.data.database.TelegramDao
+        telegramDao: com.rve.musicplayer.data.database.TelegramDao,
+        userPreferencesRepository: UserPreferencesRepository
     ): SongMetadataEditor {
-        return SongMetadataEditor(context, musicDao, telegramDao)
+        return SongMetadataEditor(context, musicDao, telegramDao, userPreferencesRepository)
     }
 
     /**
@@ -446,8 +448,7 @@ object AppModule {
             // Use modern TLS connection spec
             .connectionSpecs(listOf(
                 okhttp3.ConnectionSpec.MODERN_TLS,
-                okhttp3.ConnectionSpec.COMPATIBLE_TLS,
-                okhttp3.ConnectionSpec.CLEARTEXT
+                okhttp3.ConnectionSpec.COMPATIBLE_TLS
             ))
             .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)

@@ -10,9 +10,12 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,26 +27,40 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -61,12 +78,19 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.rve.musicplayer.R
 import com.rve.musicplayer.presentation.components.CollapsibleCommonTopBar
+import com.rve.musicplayer.presentation.components.ExpressiveTopBarContent
 import com.rve.musicplayer.presentation.viewmodel.ArtistSettingsViewModel
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -175,10 +199,13 @@ fun ArtistSettingsScreen(
                         )
                     }
                 ) {
-                    Column(modifier = Modifier.clip(shape = RoundedCornerShape(24.dp))) {
-                        // Configure Delimiters
+                    Column(
+                        modifier = Modifier.clip(shape = RoundedCornerShape(24.dp)),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        // Configure Character Delimiters
                         SettingsItem(
-                            title = "Configure Delimiters",
+                            title = "Character Delimiters",
                             subtitle = "Current: ${uiState.artistDelimiters.joinToString(", ")}",
                             leadingIcon = {
                                 Icon(
@@ -196,6 +223,45 @@ fun ArtistSettingsScreen(
                             },
                             onClick = {
                                 navController.navigateSafely("delimiter_config")
+                            }
+                        )
+
+                        // Configure Word Delimiters
+                        SettingsItem(
+                            title = "Word Delimiters",
+                            subtitle = if (uiState.wordDelimiters.isEmpty()) "None"
+                                       else "Current: ${uiState.wordDelimiters.take(5).joinToString(", ")}${if (uiState.wordDelimiters.size > 5) "..." else ""}",
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Settings,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary
+                                )
+                            },
+                            trailingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.ChevronRight,
+                                    contentDescription = "Configure",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            onClick = {
+                                navController.navigateSafely("word_delimiter_config")
+                            }
+                        )
+
+                        // Extract from title toggle
+                        SwitchSettingItem(
+                            title = "Extract Artists from Title",
+                            subtitle = "Detect feat., ft., with in song titles",
+                            checked = uiState.extractArtistsFromTitle,
+                            onCheckedChange = { viewModel.setExtractArtistsFromTitle(it) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.LibraryMusic,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary
+                                )
                             }
                         )
                     }
@@ -236,7 +302,7 @@ fun ArtistSettingsScreen(
             item {
                 InfoCard(
                     title = "About Multi-Artist Parsing",
-                    content = "RvMusic Player automatically splits artist tags containing multiple artists. This is useful for songs downloaded with yt-dlp or other tools that use delimiters like '/' to separate artists.\n\nBackslash (\\) can be used to escape delimiters."
+                    content = "RvMusic Player splits artist tags using character delimiters (/, ;, &) and word delimiters (feat., ft., vs., x). Word delimiters are matched case-insensitively.\n\n\"Extract Artists from Title\" detects patterns like (feat. Artist) in song titles.\n\nBackslash (\\) can be used to escape character delimiters."
                 )
             }
 
@@ -245,7 +311,9 @@ fun ArtistSettingsScreen(
                 ExamplesCard(
                     examples = listOf(
                         "\"Artist1/Artist2\"" to "Artist1, Artist2",
-                        "\"A + B + C\"" to "A, B, C",
+                        "\"Drake feat. Rihanna\"" to "Drake, Rihanna",
+                        "\"Marshmello x Bastille\"" to "Marshmello, Bastille",
+                        "\"Song (ft. B)\" by A" to "A, B",
                         "\"AC\\DC\"" to "AC/DC (escaped)"
                     )
                 )

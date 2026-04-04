@@ -2,6 +2,7 @@ package com.rve.musicplayer.data.worker
 
 import android.content.Context
 import android.database.MatrixCursor
+import android.net.Uri
 import android.provider.MediaStore
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -47,7 +48,16 @@ class SyncWorkerTest {
                 // SyncWorker(appContext, workerParameters, dao, resolver ?: appContext.contentResolver)
                 // Como SyncWorker obtiene el resolver de appContext, no necesitamos pasarlo explícitamente aquí
                 // a menos que queramos un mock muy específico a nivel de constructor del worker.
-                SyncWorker(appContext, workerParameters, dao)
+                SyncWorker(
+                    appContext = appContext,
+                    workerParams = workerParameters,
+                    musicDao = dao,
+                    userPreferencesRepository = mockk(relaxed = true),
+                    lyricsRepository = mockk(relaxed = true),
+                    telegramDao = mockk(relaxed = true),
+                    neteaseDao = mockk(relaxed = true),
+                    navidromeRepository = mockk(relaxed = true)
+                )
             } else {
                 null
             }
@@ -109,12 +119,14 @@ class SyncWorkerTest {
     @Test
     fun testSyncWorker_success_whenMediaStoreHasData() = runBlocking {
         // Configurar mocks para ContentResolver
-        every { mockContentResolver.query(eq(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI), any(), any(), any(), any()) } returns createMockSongCursor()
-        every { mockContentResolver.query(eq(MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI), any(), any(), any(), any()) } returns createMockAlbumCursor()
-        every { mockContentResolver.query(eq(MediaStore.Audio.Artists.EXTERNAL_CONTENT_URI), any(), any(), any(), any()) } returns createMockArtistCursor()
-        // Mock para la consulta de género (puede ser más específico si es necesario)
-        every { mockContentResolver.query(anyUriStartsWith("content://media/external/audio/genres/members"), any(), any(), any(), any()) } returns createMockGenreCursor()
-        every { mockContentResolver.query(anyUriContains("genres/external/audio/"), any(), any(), any(), any()) } returns createMockGenreCursor()
+        every { mockContentResolver.query(any(), any(), any(), any(), any()) } answers {
+            when (firstArg<Uri>().toString()) {
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI.toString() -> createMockSongCursor()
+                MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI.toString() -> createMockAlbumCursor()
+                MediaStore.Audio.Artists.EXTERNAL_CONTENT_URI.toString() -> createMockArtistCursor()
+                else -> createMockGenreCursor()
+            }
+        }
 
 
         // Crear una instancia del Contexto que devuelva nuestro ContentResolver mockeado
@@ -132,15 +144,15 @@ class SyncWorkerTest {
         assertThat(result).isEqualTo(ListenableWorker.Result.success())
 
         // Verificar datos en la base de datos
-        val songsInDb = musicDao.getSongs(10, 0).first()
+        val songsInDb = musicDao.getSongs(emptyList(), false).first()
         assertThat(songsInDb).hasSize(2)
         assertThat(songsInDb.find { it.id == 1L }?.title).isEqualTo("Test Song 1")
 
-        val albumsInDb = musicDao.getAlbums(10,0).first()
+        val albumsInDb = musicDao.getAlbums(emptyList(), false, 0).first()
         assertThat(albumsInDb).hasSize(2)
         assertThat(albumsInDb.find { it.id == 201L }?.title).isEqualTo("Test Album 1")
 
-        val artistsInDb = musicDao.getArtists(10,0).first()
+        val artistsInDb = musicDao.getArtists(emptyList(), false).first()
         assertThat(artistsInDb).hasSize(2)
         assertThat(artistsInDb.find { it.id == 101L }?.name).isEqualTo("Test Artist 1")
     }
@@ -166,11 +178,6 @@ class SyncWorkerTest {
         assertThat(musicDao.getAlbumCount().first()).isEqualTo(0)
         assertThat(musicDao.getArtistCount().first()).isEqualTo(0)
     }
-
-    // Helper para mockear URIs que empiezan con un prefijo
-    private fun anyUriStartsWith(prefix: String): Uri = io.mockk.match { it.toString().startsWith(prefix) }
-    private fun anyUriContains(substring: String): Uri = io.mockk.match { it.toString().contains(substring) }
-
 }
 
 // Wrapper simple para Context para poder mockear getContentResolver

@@ -21,6 +21,8 @@ import com.rve.musicplayer.data.database.SongArtistCrossRef
 import com.rve.musicplayer.data.database.SongEntity
 import com.rve.musicplayer.data.database.TelegramDao // Added
 import com.rve.musicplayer.data.database.resolveAlbumArtUri
+import com.rve.musicplayer.data.database.serializeArtistRefs
+import com.rve.musicplayer.data.model.ArtistRef
 import com.rve.musicplayer.data.navidrome.NavidromeRepository
 import com.rve.musicplayer.data.media.AudioMetadataReader
 import com.rve.musicplayer.data.model.Song
@@ -89,6 +91,8 @@ constructor(
                     val startTime = System.currentTimeMillis()
 
                     val artistDelimiters = userPreferencesRepository.artistDelimitersFlow.first()
+                    val artistWordDelimiters = userPreferencesRepository.artistWordDelimitersFlow.first()
+                    val extractArtistsFromTitle = userPreferencesRepository.extractArtistsFromTitleFlow.first()
                     val groupByAlbumArtist =
                             userPreferencesRepository.groupByAlbumArtistFlow.first()
                     val rescanRequired =
@@ -238,6 +242,8 @@ constructor(
                                 preProcessAndDeduplicateWithMultiArtist(
                                         songs = songsToInsert,
                                         artistDelimiters = artistDelimiters,
+                                        wordDelimiters = artistWordDelimiters,
+                                        extractFromTitle = extractArtistsFromTitle,
                                         groupByAlbumArtist = groupByAlbumArtist,
                                         existingArtistMetadata = existingArtistMetadata,
                                         existingAlbums = allExistingAlbums,
@@ -401,6 +407,8 @@ constructor(
     private fun preProcessAndDeduplicateWithMultiArtist(
             songs: List<SongEntity>,
             artistDelimiters: List<String>,
+            wordDelimiters: List<String> = emptyList(),
+            extractFromTitle: Boolean = true,
             groupByAlbumArtist: Boolean,
             existingArtistMetadata: Map<Long, Pair<String?, String?>>,
             existingAlbums: List<AlbumEntity>,
@@ -428,27 +436,33 @@ constructor(
         songs.forEach { song ->
             val rawArtistName = song.artistName
             val songArtistNameTrimmed = rawArtistName.trim()
-            val artistsForSong =
-                    artistSplitCache.getOrPut(rawArtistName) {
-                        rawArtistName.splitArtistsByDelimiters(artistDelimiters)
+
+            // Split artist field by character + word delimiters
+            val allArtistsForSong =
+                    artistSplitCache.getOrPut("$rawArtistName\u0000${song.title}\u0000$extractFromTitle") {
+                        collectArtistNames(
+                            rawArtistName = rawArtistName,
+                            title = song.title,
+                            artistDelimiters = artistDelimiters,
+                            wordDelimiters = wordDelimiters,
+                            extractFromTitle = extractFromTitle
+                        )
                     }
 
-            artistsForSong.forEach { artistName ->
+            allArtistsForSong.forEach { artistName ->
                 val normalizedName = artistName.trim()
                 if (normalizedName.isNotEmpty() && !artistNameToId.containsKey(normalizedName)) {
-                     // Check if it's the song's primary artist and we want to preserve that ID if possible?
-                     // Actually, just generate new ID if not found in map.
                      val id = nextArtistId.getAndIncrement()
                      artistNameToId[normalizedName] = id
                 }
             }
-            
+
             val primaryArtistName =
-                    artistsForSong.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+                    allArtistsForSong.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
                             ?: songArtistNameTrimmed
             val primaryArtistId = artistNameToId[primaryArtistName] ?: song.artistId
 
-            artistsForSong.forEachIndexed { index, artistName ->
+            allArtistsForSong.forEachIndexed { index, artistName ->
                 val normalizedName = artistName.trim()
                 val artistId = artistNameToId[normalizedName]
                 if (artistId != null) {
@@ -468,11 +482,19 @@ constructor(
             val albumKey = buildAlbumGroupingKey(song)
             val finalAlbumId = albumMap.getOrPut(albumKey) { song.albumId }
 
+            // Build serialized artists JSON for efficient loading without JOINs
+            val artistRefsForJson = allArtistsForSong.mapIndexed { index, name ->
+                val normalizedName = name.trim()
+                val artistId = artistNameToId[normalizedName] ?: 0L
+                ArtistRef(id = artistId, name = normalizedName, isPrimary = index == 0)
+            }.filter { it.name.isNotEmpty() }
+
             correctedSongs.add(
                     song.copy(
                             artistId = primaryArtistId,
                             artistName = rawArtistName, // Preserving full artist string for display
-                            albumId = finalAlbumId
+                            albumId = finalAlbumId,
+                            artistsJson = serializeArtistRefs(artistRefsForJson)
                     )
             )
         }
@@ -503,7 +525,8 @@ constructor(
                  displayArtist = determinedAlbumArtist,
                  songs = songsInAlbum,
                  artistNameToId = artistNameToId,
-                 artistDelimiters = artistDelimiters
+                 artistDelimiters = artistDelimiters,
+                 wordDelimiters = wordDelimiters
              )
 
              AlbumEntity(
@@ -799,6 +822,7 @@ constructor(
 
         // Phase 2: Identify changed songs and merge with existing data in chunks
         val artistDelimiters = userPreferencesRepository.artistDelimitersFlow.first()
+        val artistWordDelimiters = userPreferencesRepository.artistWordDelimitersFlow.first()
         val songsToProcess = if (isRebuild) {
              rawDataList
         } else {
@@ -858,17 +882,16 @@ constructor(
 
                             val song = if (localSong != null) {
                                 // Preserve user-edited fields
-                                val mediaStoreArtists = mediaStoreSong.artistName.splitArtistsByDelimiters(artistDelimiters)
-                                val mediaStorePrimaryArtist = mediaStoreArtists.firstOrNull()?.trim()
-                                val shouldPreserveArtistName = (mediaStoreArtists.size > 1 &&
-                                    mediaStorePrimaryArtist != null &&
-                                    localSong.artistName.trim() == mediaStorePrimaryArtist)
-
                                 mediaStoreSong.copy(
                                     dateAdded = localSong.dateAdded,
                                     lyrics = localSong.lyrics,
                                     title = if (localSong.title.isNotBlank() && localSong.title != mediaStoreSong.title) localSong.title else mediaStoreSong.title,
-                                    artistName = if (shouldPreserveArtistName) localSong.artistName else mediaStoreSong.artistName,
+                                    artistName = choosePreferredArtistName(
+                                        localArtistName = localSong.artistName,
+                                        mediaStoreArtistName = mediaStoreSong.artistName,
+                                        artistDelimiters = artistDelimiters,
+                                        wordDelimiters = artistWordDelimiters
+                                    ),
                                     albumName = if (localSong.albumName.isNotBlank() && localSong.albumName != mediaStoreSong.albumName) localSong.albumName else mediaStoreSong.albumName,
                                     genre = localSong.genre ?: mediaStoreSong.genre,
                                     trackNumber = if (localSong.trackNumber != 0) localSong.trackNumber else mediaStoreSong.trackNumber,
@@ -1326,6 +1349,7 @@ constructor(
             val existingArtistImageUrls = musicDao.getAllArtistsListRaw().associate { it.id to it.imageUrl }
             val nextArtistId = AtomicLong((musicDao.getMaxArtistId() ?: 0L) + 1)
             val delimiters = userPreferencesRepository.artistDelimitersFlow.first()
+            val wordDelims = userPreferencesRepository.artistWordDelimitersFlow.first()
 
             val songsToInsert = mutableListOf<SongEntity>()
             val artistsToInsert = mutableMapOf<Long, ArtistEntity>() // Map to dedup by ID
@@ -1385,7 +1409,7 @@ constructor(
                 
                 // 3. Multi-Artist Processing
                 val rawArtistName = if (realArtistName.isBlank()) "Unknown Artist" else realArtistName
-                val splitArtists = rawArtistName.splitArtistsByDelimiters(delimiters)
+                val splitArtists = rawArtistName.splitArtistsByDelimiters(delimiters, wordDelims)
                 
                 // Process Primary Artist (First in list)
                 val primaryArtistName = splitArtists.firstOrNull()?.trim() ?: "Unknown Artist"
@@ -1454,6 +1478,16 @@ constructor(
                 }
 
                 // 5. Build Final Song Entity
+                // Build artists JSON from the split artists and their resolved IDs
+                val telegramArtistRefs = splitArtists.mapIndexed { idx, name ->
+                    val cleanName = name.trim()
+                    val lowerName = cleanName.lowercase()
+                    val artId = existingArtists[lowerName]
+                        ?: artistsToInsert.values.find { it.name.equals(cleanName, ignoreCase = true) }?.id
+                        ?: 0L
+                    ArtistRef(id = artId, name = cleanName, isPrimary = idx == 0)
+                }.filter { it.name.isNotEmpty() }
+
                 val songEntity = SongEntity(
                     id = finalSongId,
                     title = realTitle,
@@ -1478,7 +1512,8 @@ constructor(
                     bitrate = realBitrate,
                     sampleRate = realSampleRate,
                     telegramChatId = tSong.chatId,
-                    telegramFileId = tSong.fileId
+                    telegramFileId = tSong.fileId,
+                    artistsJson = serializeArtistRefs(telegramArtistRefs)
                 )
                 songsToInsert.add(songEntity)
             }
@@ -1567,6 +1602,15 @@ constructor(
                     )
                 )
 
+                // Build artists JSON
+                val neteaseArtistRefs = artistNames.mapIndexed { idx, name ->
+                    ArtistRef(
+                        id = toUnifiedNeteaseArtistId(name),
+                        name = name,
+                        isPrimary = idx == 0
+                    )
+                }
+
                 songsToInsert.add(
                     SongEntity(
                         id = songId,
@@ -1591,7 +1635,8 @@ constructor(
                         bitrate = nSong.bitrate,
                         sampleRate = null,
                         telegramChatId = null,
-                        telegramFileId = null
+                        telegramFileId = null,
+                        artistsJson = serializeArtistRefs(neteaseArtistRefs)
                     )
                 )
             }

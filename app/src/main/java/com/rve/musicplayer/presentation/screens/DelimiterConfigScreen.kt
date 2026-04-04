@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -26,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.RestartAlt
@@ -34,18 +36,22 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -59,13 +65,18 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.rve.musicplayer.R
 import com.rve.musicplayer.data.preferences.UserPreferencesRepository
 import com.rve.musicplayer.presentation.components.CollapsibleCommonTopBar
+import com.rve.musicplayer.presentation.components.ExpressiveTopBarContent
 import com.rve.musicplayer.presentation.viewmodel.ArtistSettingsViewModel
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -94,7 +105,9 @@ fun DelimiterConfigScreen(
     val maxTopBarHeightPx = with(density) { maxTopBarHeight.toPx() }
 
     val topBarHeight = remember { Animatable(maxTopBarHeightPx) }
-    var collapseFraction by remember { mutableStateOf(0f) }
+    var collapseFraction by remember { mutableFloatStateOf(0f) }
+    
+    var showResetDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(topBarHeight.value) {
         collapseFraction = 1f - ((topBarHeight.value - minTopBarHeightPx) / (maxTopBarHeightPx - minTopBarHeightPx)).coerceIn(0f, 1f)
@@ -346,27 +359,83 @@ fun DelimiterConfigScreen(
             headerHeight = currentTopBarHeightDp,
             onBackClick = { navController.popBackStack() },
             actions = {
-                Button(
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer
-                    ),
-                    onClick = {
-                        viewModel.resetDelimitersToDefault()
-                        Toast.makeText(context, "Delimiters reset to defaults", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.padding(end = 16.dp)
+                Box(
+                    modifier = Modifier
+                        .height(48.dp)
+                        .padding(end = 16.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.RestartAlt,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Reset")
+                    FilledIconButton(
+                        onClick = { showResetDialog = true },
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        ),
+                        modifier = Modifier
+                            .width(52.dp)
+                            .height(36.dp),
+                        shape = androidx.compose.foundation.shape.CircleShape
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.RestartAlt,
+                            contentDescription = "Reset Defaults",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         )
+
+        if (showResetDialog) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showResetDialog = false },
+                title = {
+                    Text(
+                        text = "Reset Delimiters?",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        text = "This will clear all your custom delimiters and restore the defaults. This action cannot be undone.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.RestartAlt,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.resetDelimitersToDefault()
+                            Toast.makeText(context, "Delimiters reset to defaults", Toast.LENGTH_SHORT).show()
+                            showResetDialog = false
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        )
+                    ) {
+                        Text("Reset")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showResetDialog = false }
+                    ) {
+                        Text("Cancel")
+                    }
+                },
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(24.dp)
+            )
+        }
     }
 }
 

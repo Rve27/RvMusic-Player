@@ -26,4 +26,8 @@ data class SyncedLine(
 )
 
 @Serializable
-data class SyncedWord(val time: Int, val word: String)
+data class SyncedWord(
+    val time: Int,
+    val word: String,
+    val startsNewWord: Boolean = true
+)

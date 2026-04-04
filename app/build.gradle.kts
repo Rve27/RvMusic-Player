@@ -18,6 +18,12 @@ android {
         }
     }
 
+    sourceSets {
+        getByName("androidTest") {
+            assets.srcDir("$projectDir/schemas")
+        }
+    }
+
     androidResources {
         noCompress.add("tflite")
     }
@@ -190,7 +196,12 @@ dependencies {
     testImplementation(libs.androidx.room.testing)
     testImplementation(libs.kotlin.test.junit)
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.truth)
+    androidTestImplementation(libs.mockk)
+    androidTestImplementation("androidx.work:work-testing:2.10.1")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     // Keep debug-only Compose tooling on the same version line as the runtime stack.
@@ -202,8 +213,8 @@ dependencies {
     // Asegúrate de que libs.versions.toml tiene androidxBenchmarkMacroJunit4 y androidxUiautomator
     // Ejemplo: androidx-benchmark-macro-junit4 = { group = "androidx.benchmark", name = "benchmark-macro-junit4", version.ref = "benchmarkMacro" }
     // benchmarkMacro = "1.2.4"
-    //androidTestImplementation(libs.androidx.benchmark.macro.junit4)
-    //androidTestImplementation(libs.androidx.uiautomator)
+    androidTestImplementation(libs.androidx.benchmark.macro.junit4)
+    androidTestImplementation(libs.androidx.uiautomator)
 
 
     // Hilt

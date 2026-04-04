@@ -16,8 +16,10 @@ import com.rve.musicplayer.data.preferences.UserPreferencesRepository
 import com.rve.musicplayer.utils.AlbumArtUtils
 import com.rve.musicplayer.utils.DirectoryRuleResolver
 import com.rve.musicplayer.utils.DirectoryFilterUtils
+import com.rve.musicplayer.utils.LogUtils
 import com.rve.musicplayer.utils.normalizeMetadataText
 import com.rve.musicplayer.utils.normalizeMetadataTextOrEmpty
+import com.rve.musicplayer.utils.extractArtistsFromTitle
 import com.rve.musicplayer.utils.splitArtistsByDelimiters
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -66,18 +68,24 @@ class MediaStoreSongRepository @Inject constructor(
             userPreferencesRepository.allowedDirectoriesFlow.distinctUntilChanged(),
             userPreferencesRepository.blockedDirectoriesFlow.distinctUntilChanged(),
             userPreferencesRepository.artistDelimitersFlow.distinctUntilChanged(),
-            userPreferencesRepository.minSongDurationFlow.distinctUntilChanged()
+            userPreferencesRepository.minSongDurationFlow.distinctUntilChanged(),
+            userPreferencesRepository.artistWordDelimitersFlow.distinctUntilChanged(),
+            userPreferencesRepository.extractArtistsFromTitleFlow.distinctUntilChanged()
         ) { values ->
             val favoriteIds = @Suppress("UNCHECKED_CAST") (values[1] as List<Long>)
             val allowedDirs = @Suppress("UNCHECKED_CAST") (values[2] as Set<String>)
             val blockedDirs = @Suppress("UNCHECKED_CAST") (values[3] as Set<String>)
             val artistDelimiters = @Suppress("UNCHECKED_CAST") (values[4] as List<String>)
             val minDuration = values[5] as Int
+            val wordDelimiters = @Suppress("UNCHECKED_CAST") (values[6] as List<String>)
+            val extractFromTitle = values[7] as Boolean
             fetchSongsFromMediaStore(
                 favoriteIds = favoriteIds.toSet(),
                 allowedDirs = allowedDirs.toList(),
                 blockedDirs = blockedDirs.toList(),
                 artistDelimiters = artistDelimiters,
+                wordDelimiters = wordDelimiters,
+                extractFromTitle = extractFromTitle,
                 minDurationMs = minDuration,
                 extraSelection = extraSelection,
                 extraSelectionArgs = extraSelectionArgs
@@ -92,6 +100,8 @@ class MediaStoreSongRepository @Inject constructor(
         allowedDirs: List<String>,
         blockedDirs: List<String>,
         artistDelimiters: List<String>,
+        wordDelimiters: List<String> = emptyList(),
+        extractFromTitle: Boolean = true,
         minDurationMs: Int = 10000,
         extraSelection: String? = null,
         extraSelectionArgs: Array<String>? = null
@@ -182,16 +192,36 @@ class MediaStoreSongRepository @Inject constructor(
                         forceRefresh = false
                     )
 
-                    // Artists parsing (supports multiple artists separated by user delimiters)
+                    // Artists parsing (supports character + word delimiters like "feat.", "ft.", "x")
                     val rawArtist = cursor.getString(artistCol).normalizeMetadataTextOrEmpty()
-                    val splitArtists = rawArtist.splitArtistsByDelimiters(artistDelimiters)
-                    val normalizedArtists = if (splitArtists.isNotEmpty()) splitArtists else listOf(rawArtist)
+                    val rawTitle = cursor.getString(titleCol).normalizeMetadataTextOrEmpty()
+
+                    // Split artist field by both character and word delimiters
+                    val splitArtists = rawArtist.splitArtistsByDelimiters(artistDelimiters, wordDelimiters)
+                    val allArtistNames = splitArtists.toMutableList()
+
+                    // Extract featured artists from title (e.g., "Song (feat. Artist)")
+                    val displayTitle: String
+                    if (extractFromTitle) {
+                        val (cleanedTitle, titleArtists) = rawTitle.extractArtistsFromTitle(artistDelimiters, wordDelimiters)
+                        displayTitle = cleanedTitle
+                        // Add title artists that aren't already in the artist field
+                        titleArtists.forEach { ta ->
+                            if (allArtistNames.none { it.equals(ta, ignoreCase = true) }) {
+                                allArtistNames.add(ta)
+                            }
+                        }
+                    } else {
+                        displayTitle = rawTitle
+                    }
+
+                    val normalizedArtists = if (allArtistNames.isNotEmpty()) allArtistNames else listOf(rawArtist)
                     val primaryArtistName = normalizedArtists.firstOrNull().orEmpty()
 
                     val artistRefs = normalizedArtists.mapIndexed { index, name ->
                         ArtistRef(
                             id = if (index == 0) cursor.getLong(artistIdCol)
-                            else (name.hashCode().toLong() * -1L) - 10_000L - index,
+                            else (name.hashCode().toLong() * -1L) - 10_000L,
                             name = name,
                             isPrimary = index == 0
                         )
@@ -199,7 +229,7 @@ class MediaStoreSongRepository @Inject constructor(
 
                     val song = Song(
                         id = id.toString(),
-                        title = cursor.getString(titleCol).normalizeMetadataTextOrEmpty(),
+                        title = displayTitle,
                         artist = primaryArtistName,
                         artistId = cursor.getLong(artistIdCol),
                         artists = artistRefs,
@@ -295,6 +325,8 @@ class MediaStoreSongRepository @Inject constructor(
         val allowedDirs = userPreferencesRepository.allowedDirectoriesFlow.first()
         val blockedDirs = userPreferencesRepository.blockedDirectoriesFlow.first()
         val artistDelimiters = userPreferencesRepository.artistDelimitersFlow.first()
+        val wordDelims = userPreferencesRepository.artistWordDelimitersFlow.first()
+        val extractFromTitle = userPreferencesRepository.extractArtistsFromTitleFlow.first()
         val minDuration = userPreferencesRepository.minSongDurationFlow.first()
         val queryTerm = "%${query.trim()}%"
         return fetchSongsFromMediaStore(
@@ -302,6 +334,8 @@ class MediaStoreSongRepository @Inject constructor(
             allowedDirs = allowedDirs.toList(),
             blockedDirs = blockedDirs.toList(),
             artistDelimiters = artistDelimiters,
+            wordDelimiters = wordDelims,
+            extractFromTitle = extractFromTitle,
             minDurationMs = minDuration,
             extraSelection = "${MediaStore.Audio.Media.TITLE} LIKE ? COLLATE NOCASE OR ${MediaStore.Audio.Media.ARTIST} LIKE ? COLLATE NOCASE",
             extraSelectionArgs = arrayOf(queryTerm, queryTerm)

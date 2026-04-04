@@ -96,7 +96,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
 import com.rve.musicplayer.data.model.SyncedLine
 import com.rve.musicplayer.data.model.SyncedWord
 import com.rve.musicplayer.data.repository.LyricsSearchResult
@@ -114,9 +113,7 @@ import com.rve.musicplayer.presentation.components.snapping.rememberLazyListSnap
 import com.rve.musicplayer.presentation.components.snapping.rememberSnapperFlingBehavior
 import com.rve.musicplayer.utils.LyricsUtils
 import com.rve.musicplayer.presentation.components.subcomps.LyricsMoreBottomSheet
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -140,7 +137,7 @@ import com.rve.musicplayer.utils.MultiLangRomanizer
 @Composable
 fun LyricsSheet(
     stablePlayerStateFlow: StateFlow<StablePlayerState>,
-    playbackPositionFlow: Flow<Long>,
+    playbackPositionFlow: StateFlow<Long>,
     lyricsSearchUiState: LyricsSearchUiState,
     resetLyricsForCurrentSong: () -> Unit,
     onSearchLyrics: (Boolean) -> Unit,
@@ -183,7 +180,6 @@ fun LyricsSheet(
 ) {
     BackHandler { onBackClick() }
     val stablePlayerState by stablePlayerStateFlow.collectAsStateWithLifecycle()
-    val playbackPosition by playbackPositionFlow.collectAsStateWithLifecycle(initialValue = 0L)
 
     val isLoadingLyrics by remember { derivedStateOf { stablePlayerState.isLoadingLyrics } }
     val lyrics by remember { derivedStateOf { stablePlayerState.lyrics } }
@@ -254,6 +250,7 @@ fun LyricsSheet(
     // Save lyrics dialog state
     var showSaveLyricsDialog by remember { mutableStateOf(false) }
     var showSyncControls by remember { mutableStateOf(false) }
+    var previewSeekPositionMs by remember(currentSong?.id) { mutableStateOf<Long?>(null) }
 
     var showSyncedLyrics by remember(lyrics) {
         mutableStateOf(
@@ -478,19 +475,16 @@ fun LyricsSheet(
                     resetImmersiveTimer()
                 }
         ) {
-            val syncedListState = rememberLazyListState()
+            val initialSyncedLineIndex = remember(lyrics, playbackPositionFlow, lyricsSyncOffset) {
+                resolveCurrentLineIndex(
+                    lines = lyrics?.synced.orEmpty(),
+                    position = (playbackPositionFlow.value + lyricsSyncOffset).coerceAtLeast(0L)
+                ).coerceAtLeast(0)
+            }
+            val syncedListState = rememberLazyListState(
+                initialFirstVisibleItemIndex = initialSyncedLineIndex
+            )
             val staticListState = rememberLazyListState()
-            // Apply lyrics sync offset to the position flow
-            val positionFlow = remember(playbackPositionFlow, lyricsSyncOffset) {
-                playbackPositionFlow
-                    .map { (it + lyricsSyncOffset).coerceAtLeast(0L) }
-                    .distinctUntilChanged()
-            }
-
-            LaunchedEffect(lyrics) {
-                syncedListState.scrollToItem(0)
-                staticListState.scrollToItem(0)
-            }
 
             // Lyrics Content (Weight 1)
             Box(
@@ -579,7 +573,9 @@ fun LyricsSheet(
                                 contentPadding = PaddingValues(top = 130.dp, bottom = 100.dp),
                                 lines = synced,
                                 listState = syncedListState,
-                                positionFlow = positionFlow,
+                                playbackPositionFlow = playbackPositionFlow,
+                                lyricsSyncOffset = lyricsSyncOffset,
+                                positionOverrideMs = previewSeekPositionMs,
                                 accentColor = accentColor,
                                 textStyle = scaledTextStyle,
                                 onLineClick = { syncedLine -> 
@@ -775,17 +771,18 @@ fun LyricsSheet(
                     }
 
                     // Progress Bar
-                    PlayerSeekBar(
-                        backgroundColor = backgroundColor, // Transparent as it's now inline
-                        onBackgroundColor = onBackgroundColor,
-                        primaryColor = accentColor,
-                        currentPosition = playbackPosition,
-                        totalDuration = stablePlayerState.totalDuration,
-                        onSeek = onSeekTo,
-                        isPlaying = isPlaying,
+                    LyricsPlaybackSeekBar(
                         modifier = Modifier
                             .weight(1f)
-                            .height(50.dp)
+                            .height(50.dp),
+                        playbackPositionFlow = playbackPositionFlow,
+                        backgroundColor = backgroundColor,
+                        onBackgroundColor = onBackgroundColor,
+                        accentColor = accentColor,
+                        totalDuration = stablePlayerState.totalDuration,
+                        onSeekTo = onSeekTo,
+                        onSeekPreviewChange = { previewSeekPositionMs = it },
+                        isPlaying = isPlaying
                     )
                 }
                 
@@ -955,12 +952,41 @@ fun LyricsSheet(
     }
 }
 
+@Composable
+private fun LyricsPlaybackSeekBar(
+    playbackPositionFlow: StateFlow<Long>,
+    backgroundColor: Color,
+    onBackgroundColor: Color,
+    accentColor: Color,
+    totalDuration: Long,
+    onSeekTo: (Long) -> Unit,
+    onSeekPreviewChange: (Long?) -> Unit,
+    isPlaying: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val playbackPosition by playbackPositionFlow.collectAsStateWithLifecycle()
+
+    PlayerSeekBar(
+        backgroundColor = backgroundColor,
+        onBackgroundColor = onBackgroundColor,
+        primaryColor = accentColor,
+        currentPosition = playbackPosition,
+        totalDuration = totalDuration,
+        onSeek = onSeekTo,
+        onSeekPreview = onSeekPreviewChange,
+        isPlaying = isPlaying,
+        modifier = modifier
+    )
+}
+
 @OptIn(ExperimentalSnapperApi::class)
 @Composable
 fun SyncedLyricsList(
     lines: List<SyncedLine>,
     listState: LazyListState,
-    positionFlow: Flow<Long>,
+    playbackPositionFlow: StateFlow<Long>,
+    lyricsSyncOffset: Int,
+    positionOverrideMs: Long? = null,
     accentColor: Color,
     textStyle: TextStyle,
     onLineClick: (SyncedLine) -> Unit,
@@ -979,18 +1005,18 @@ fun SyncedLyricsList(
     footer: LazyListScope.() -> Unit = {}
 ) {
     val density = LocalDensity.current
-    val position by positionFlow.collectAsStateWithLifecycle(initialValue = 0L)
+    val playbackPosition by playbackPositionFlow.collectAsStateWithLifecycle()
+    val position = remember(playbackPosition, lyricsSyncOffset, positionOverrideMs) {
+        positionOverrideMs ?: (playbackPosition + lyricsSyncOffset).coerceAtLeast(0L)
+    }
+    val isPreviewSeeking = positionOverrideMs != null
     val currentLineIndex by remember(position, lines) {
         derivedStateOf {
-            if (lines.isEmpty()) return@derivedStateOf -1
-            val currentPosition = position
-            lines.withIndex().lastOrNull { (index, line) ->
-                val nextTime = lines.getOrNull(index + 1)?.time ?: Int.MAX_VALUE
-                val lineEndTime = resolveLineEndTimeMs(line, nextTime)
-                currentPosition in line.time.toLong()..<lineEndTime
-            }?.index ?: -1
+            resolveCurrentLineIndex(lines = lines, position = position)
         }
     }
+    var hasAlignedInitialLine by remember(lines) { mutableStateOf(false) }
+    var lastAutoScrolledLineIndex by remember(lines) { mutableIntStateOf(-1) }
 
     BoxWithConstraints(modifier = modifier) {
         val metrics = remember(maxHeight, highlightZoneFraction, highlightOffsetDp) {
@@ -1007,11 +1033,50 @@ fun SyncedLyricsList(
         )
         val flingBehavior = rememberSnapperFlingBehavior(layoutInfo = snapperLayoutInfo)
 
-        LaunchedEffect(currentLineIndex, lines.size, metrics) {
+        LaunchedEffect(currentLineIndex, lines.size, metrics, isPreviewSeeking) {
             if (lines.isEmpty()) return@LaunchedEffect
             if (currentLineIndex !in lines.indices) return@LaunchedEffect
-            if (listState.isScrollInProgress) return@LaunchedEffect
             if (listState.layoutInfo.totalItemsCount == 0) return@LaunchedEffect
+
+            if (!hasAlignedInitialLine) {
+                listState.scrollToItem(currentLineIndex)
+                snapToSnapIndex(
+                    listState = listState,
+                    layoutInfo = snapperLayoutInfo,
+                    targetIndex = currentLineIndex
+                )
+                hasAlignedInitialLine = true
+                lastAutoScrolledLineIndex = currentLineIndex
+                return@LaunchedEffect
+            }
+
+            if (listState.isScrollInProgress && !isPreviewSeeking) return@LaunchedEffect
+
+            val lineJumpDistance = if (lastAutoScrolledLineIndex >= 0) {
+                abs(currentLineIndex - lastAutoScrolledLineIndex)
+            } else {
+                0
+            }
+
+            if (isPreviewSeeking) {
+                if (lineJumpDistance > 2) {
+                    listState.scrollToItem(currentLineIndex)
+                    snapToSnapIndex(
+                        listState = listState,
+                        layoutInfo = snapperLayoutInfo,
+                        targetIndex = currentLineIndex
+                    )
+                } else {
+                    animateToSnapIndex(
+                        listState = listState,
+                        layoutInfo = snapperLayoutInfo,
+                        targetIndex = currentLineIndex,
+                        animationSpec = tween(durationMillis = 110, easing = FastOutSlowInEasing)
+                    )
+                }
+                lastAutoScrolledLineIndex = currentLineIndex
+                return@LaunchedEffect
+            }
 
             // Music Style Dynamic Velocity
             val dynamicAnimationSpec = if (useAnimatedLyrics) {
@@ -1033,6 +1098,7 @@ fun SyncedLyricsList(
                 targetIndex = currentLineIndex,
                 animationSpec = dynamicAnimationSpec
             )
+            lastAutoScrolledLineIndex = currentLineIndex
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
@@ -1087,7 +1153,7 @@ fun SyncedLyricsList(
                         )
                     } else {
                         BubblesLine(
-                            positionFlow = positionFlow,
+                            positionFlow = playbackPositionFlow,
                             time = line.time,
                             color = LocalContentColor.current.copy(alpha = 0.6f),
                             nextTime = nextTime,
@@ -1139,6 +1205,9 @@ fun LyricLineRow(
     val sanitizedLine = remember(line.line) { sanitizeLyricLineText(line.line) }
     val sanitizedWords = remember(line.words) {
         line.words?.let(::sanitizeSyncedWords)
+    }
+    val sanitizedWordClusters = remember(sanitizedWords) {
+        sanitizedWords?.takeIf { it.isNotEmpty() }?.let(::clusterSyncedWords)
     }
     val lineEndTime = remember(line, nextTime) {
         resolveLineEndTimeMs(line, nextTime)
@@ -1263,7 +1332,7 @@ fun LyricLineRow(
         else -> Alignment.TopStart
     }
 
-    if (sanitizedWords.isNullOrEmpty()) {
+    if (sanitizedWordClusters.isNullOrEmpty()) {
         Column(
             modifier = animatedModifier
                 .clip(RoundedCornerShape(12.dp))
@@ -1313,7 +1382,7 @@ fun LyricLineRow(
         val highlightedWordIndex by remember(position, sanitizedWords, line.time, lineEndTime) {
             derivedStateOf {
                 resolveHighlightedWordIndex(
-                    words = sanitizedWords,
+                    words = requireNotNull(sanitizedWords),
                     positionMs = position,
                     lineStartTimeMs = line.time.toLong(),
                     lineEndTimeMs = lineEndTime
@@ -1330,22 +1399,29 @@ fun LyricLineRow(
         ) {
             FlowRow(
                 horizontalArrangement = when (lyricsAlignment) {
-                    "center" -> Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
-                    "right" -> Arrangement.spacedBy(6.dp, Alignment.End)
-                    else -> Arrangement.spacedBy(6.dp, Alignment.Start)
+                    "center" -> Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally)
+                    "right" -> Arrangement.spacedBy(3.dp, Alignment.End)
+                    else -> Arrangement.spacedBy(3.dp, Alignment.Start)
                 },
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                sanitizedWords.forEachIndexed { wordIndex, word ->
-                    key("${line.time}_${word.time}_${word.word}") {
-                        LyricWordSpan(
-                            word = word,
-                            isHighlighted = isCurrentLine && wordIndex == highlightedWordIndex,
-                            useAnimatedLyrics = useAnimatedLyrics,
-                            style = style,
-                            highlightedColor = accentColor,
-                            unhighlightedColor = unhighlightedColor
-                        )
+                sanitizedWordClusters.forEach { cluster ->
+                    key("${line.time}_${cluster.startIndex}") {
+                        Row {
+                            cluster.words.forEachIndexed { clusterOffset, word ->
+                                val wordIndex = cluster.startIndex + clusterOffset
+                                key("${line.time}_${word.time}_${word.word}_$wordIndex") {
+                                    LyricWordSpan(
+                                        word = word,
+                                        isHighlighted = isCurrentLine && wordIndex == highlightedWordIndex,
+                                        useAnimatedLyrics = useAnimatedLyrics,
+                                        style = style,
+                                        highlightedColor = accentColor,
+                                        unhighlightedColor = unhighlightedColor
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1495,22 +1571,49 @@ internal fun sanitizeLyricLineText(raw: String): String =
 internal fun sanitizeSyncedWords(words: List<SyncedWord>): List<SyncedWord> =
     buildList {
         words.forEachIndexed { index, word ->
-        val sanitized = if (index == 0) LeadingTagRegex.replace(word.word, "") else word.word
-            if (sanitized.isEmpty()) return@forEachIndexed
+            val sanitized = if (index == 0) LeadingTagRegex.replace(word.word, "") else word.word
+            val normalized = sanitized.trim()
+            if (normalized.isEmpty()) return@forEachIndexed
 
-            // Avoid invisible timed tokens stealing highlight from visible words.
-            if (sanitized.isBlank()) {
-                val lastIndex = this.lastIndex
-                if (lastIndex >= 0) {
-                    val previous = this[lastIndex]
-                    this[lastIndex] = previous.copy(word = previous.word + sanitized)
-                }
-                return@forEachIndexed
-            }
-
-            add(word.copy(word = sanitized))
+            add(
+                word.copy(
+                    word = normalized,
+                    startsNewWord = if (isEmpty()) true else word.startsNewWord
+                )
+            )
         }
     }
+
+internal data class SyncedWordCluster(
+    val startIndex: Int,
+    val words: List<SyncedWord>
+)
+
+internal fun clusterSyncedWords(words: List<SyncedWord>): List<SyncedWordCluster> {
+    if (words.isEmpty()) return emptyList()
+
+    val clusters = mutableListOf<SyncedWordCluster>()
+    var currentWords = mutableListOf<SyncedWord>()
+    var currentStartIndex = 0
+
+    words.forEachIndexed { index, word ->
+        if (word.startsNewWord && currentWords.isNotEmpty()) {
+            clusters += SyncedWordCluster(startIndex = currentStartIndex, words = currentWords.toList())
+            currentWords = mutableListOf()
+            currentStartIndex = index
+        } else if (currentWords.isEmpty()) {
+            currentStartIndex = index
+        }
+
+        currentWords += word
+    }
+
+    if (currentWords.isNotEmpty()) {
+        clusters += SyncedWordCluster(startIndex = currentStartIndex, words = currentWords.toList())
+    }
+
+    return clusters
+}
 
 internal fun normalizeWordEndTime(
     currentWordTimeMs: Long,
@@ -1608,6 +1711,32 @@ internal suspend fun animateToSnapIndex(
             if (abs(delta - consumed) > 0.5f) cancelAnimation()
         }
     }
+}
+
+internal suspend fun snapToSnapIndex(
+    listState: LazyListState,
+    layoutInfo: SnapperLayoutInfo,
+    targetIndex: Int
+) {
+    val distance = layoutInfo.distanceToIndexSnap(targetIndex)
+    if (distance == 0) return
+
+    listState.scroll {
+        scrollBy(distance.toFloat())
+    }
+}
+
+internal fun resolveCurrentLineIndex(
+    lines: List<SyncedLine>,
+    position: Long
+): Int {
+    if (lines.isEmpty()) return -1
+
+    return lines.withIndex().lastOrNull { (index, line) ->
+        val nextTime = lines.getOrNull(index + 1)?.time ?: Int.MAX_VALUE
+        val lineEndTime = resolveLineEndTimeMs(line, nextTime)
+        position in line.time.toLong()..<lineEndTime
+    }?.index ?: -1
 }
 
 /**

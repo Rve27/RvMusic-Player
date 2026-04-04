@@ -47,6 +47,11 @@
     <string name="unknown_artist">Artista desconocido</string>
     <string name="unknown_album">Álbum desconocido</string>
     <string name="artist_picker_title">Selecciona un artista</string>
+    <string name="artist_picker_supporting_text">Abre cualquiera de los artistas acreditados en esta canción.</string>
+    <string name="artist_picker_count_single">1 artista</string>
+    <string name="artist_picker_count_multiple">%1$d artistas</string>
+    <string name="artist_picker_primary_label">Artista principal</string>
+    <string name="artist_picker_shortcut_label">Página del artista</string>
     <string name="external_queue_label">Reproducción rápida</string>
     <string name="external_playback_error">No se puede abrir ese archivo de audio.</string>
     <string name="open_full_player">Abrir reproductor completo</string>

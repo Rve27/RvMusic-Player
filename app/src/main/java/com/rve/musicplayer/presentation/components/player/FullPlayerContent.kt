@@ -46,21 +46,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 // import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults // Removed
 // import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState // Removed
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.SheetState
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -232,39 +230,50 @@ fun FullPlayerContent(
                 try {
                     val contentResolver = context.contentResolver
                     
-                    // Check file size and name for safety
+                    // Resolve file metadata up front, but do not trust provider size alone.
                     var fileName = ""
-                    var fileSize = 0L
+                    var fileSize: Long? = null
                     contentResolver.query(it, null, null, null, null)?.use { cursor ->
                         val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                         val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
                         if (cursor.moveToFirst()) {
                             fileName = if (nameIndex != -1) cursor.getString(nameIndex) else ""
-                            fileSize = if (sizeIndex != -1) cursor.getLong(sizeIndex) else 0L
+                            fileSize = if (sizeIndex != -1 && !cursor.isNull(sizeIndex)) {
+                                cursor.getLong(sizeIndex)
+                            } else {
+                                null
+                            }
                         }
                     }
 
-                    // Only allow max 1 MB file size (lyrics should be very small)
-                    if (fileSize > 1_000_000) {
-                        playerViewModel.sendToast("File too large. Please select a valid lyrics file.")
-                        return@let
-                    }
+                    val validation = contentResolver.openInputStream(it)?.use { inputStream ->
+                        com.rve.musicplayer.utils.LyricsImportSecurity.validateImportedLyricsFile(
+                            fileName = fileName,
+                            mimeType = contentResolver.getType(it),
+                            inputStream = inputStream,
+                            reportedSizeBytes = fileSize
+                        )
+                    } ?: com.rve.musicplayer.utils.LyricsImportValidationResult.Invalid(
+                        com.rve.musicplayer.utils.LyricsImportFailureReason.EMPTY_CONTENT
+                    )
 
-                    // Only allow .lrc or .txt file
-                    val isLyricsFile = fileName.endsWith(".lrc", ignoreCase = true) ||
-                            fileName.endsWith(".txt", ignoreCase = true)
-                    
-                    if (!isLyricsFile) {
-                        playerViewModel.sendToast("Only support .lrc or .txt file.")
-                        return@let
-                    }
-
-                    contentResolver.openInputStream(it)?.use { inputStream ->
-                        val lyricsContent = inputStream.bufferedReader().use { reader -> reader.readText() }
-                        currentSong?.id?.toLong()?.let { songId ->
-                            playerViewModel.importLyricsFromFile(songId, lyricsContent)
+                    val validatedImport = when (validation) {
+                        is com.rve.musicplayer.utils.LyricsImportValidationResult.Valid -> validation.value
+                        is com.rve.musicplayer.utils.LyricsImportValidationResult.Invalid -> {
+                            playerViewModel.sendToast(
+                                com.rve.musicplayer.utils.LyricsImportSecurity.messageFor(validation.reason)
+                            )
+                            return@let
                         }
                     }
+
+                    val currentSongId = currentSong?.id?.toLongOrNull()
+                    if (currentSongId == null) {
+                        playerViewModel.sendToast("No song selected for lyrics import.")
+                        return@let
+                    }
+
+                    playerViewModel.importLyricsFromFile(currentSongId, validatedImport)
                     showFetchLyricsDialog = false
                     showLyricsSheet = true
                 } catch (e: Exception) {
@@ -282,18 +291,13 @@ fun FullPlayerContent(
     val playerOnBaseColor = LocalMaterialTheme.current.onPrimaryContainer
     val playerAccentColor = LocalMaterialTheme.current.primary
     val playerOnAccentColor = LocalMaterialTheme.current.onPrimary
-    val playerSecondaryAccentColor = LocalMaterialTheme.current.secondary
-    val playerOnSecondaryAccentColor = LocalMaterialTheme.current.onSecondary
-    val playerOnSecondaryContainerColor = LocalMaterialTheme.current.onSecondaryContainer
-    val playerTertiaryAccentColor = LocalMaterialTheme.current.tertiaryContainer
-    val playerOnTertiaryAccentColor = LocalMaterialTheme.current.onTertiaryContainer
-    val playerSurfaceColor = LocalMaterialTheme.current.surfaceContainer
-    val playerSurfaceHighColor = LocalMaterialTheme.current.surfaceContainerHigh
-    val playerSurfaceHighestColor = LocalMaterialTheme.current.surfaceContainerHighest
-    val playerSubtleTextColor = LocalMaterialTheme.current.onSurfaceVariant
-    val playerOnSurfaceColor = LocalMaterialTheme.current.onSurface
-
-    val controlTintOtherIcons = playerOnSecondaryAccentColor
+    val transportPlayPauseColors = expressivePlayPauseButtonColors(LocalMaterialTheme.current)
+    val transportSkipColors = expressiveSkipButtonColors(LocalMaterialTheme.current)
+    val transportSkipButtonColors = TransportButtonColors(
+        container = playerAccentColor,
+        content = playerOnAccentColor
+    )
+    val progressActiveColor = playerOnBaseColor
 
     val placeholderColor = playerOnBaseColor.copy(alpha = 0.1f)
     val placeholderOnColor = playerOnBaseColor.copy(alpha = 0.2f)
@@ -339,7 +343,7 @@ fun FullPlayerContent(
                     playerViewModel.resetLyricsSearchState()
                 },
                 onImport = {
-                    filePickerLauncher.launch(arrayOf("*/*"))
+                    filePickerLauncher.launch(com.rve.musicplayer.utils.LyricsImportSecurity.pickerMimeTypes())
                 }
             )
         }
@@ -487,6 +491,9 @@ fun FullPlayerContent(
             albumArtQuality = albumArtQuality,
             requestedScrollIndex = pendingCarouselIndex,
             onSongSelected = onAlbumSongSelected,
+            onAlbumClick = { albumSong ->
+                playerViewModel.triggerAlbumNavigationFromPlayer(albumSong.albumId)
+            },
             modifier = modifier
         )
     }
@@ -505,7 +512,7 @@ fun FullPlayerContent(
             expansionFractionProvider = expansionFractionProvider,
             isPlayingProvider = isPlayingProvider,
             currentSheetState = currentSheetState,
-            playerAccentColor = playerAccentColor,
+            progressActiveColor = progressActiveColor,
             playerOnBaseColor = playerOnBaseColor,
             allowRealtimeUpdates = allowRealtimeUpdates,
             isSheetDragGestureActive = isSheetDragGestureActive,
@@ -525,10 +532,8 @@ fun FullPlayerContent(
             onPrevious = onPreviousWithOptimisticCarousel,
             onPlayPause = onPlayPause,
             onNext = onNextWithOptimisticCarousel,
-            playerSecondaryAccentColor = playerSecondaryAccentColor,
-            playerAccentColor = playerAccentColor,
-            playerOnAccentColor = playerOnAccentColor,
-            controlTintOtherIcons = controlTintOtherIcons,
+            transportPlayPauseColors = transportPlayPauseColors,
+            transportSkipColors = transportSkipButtonColors,
             isShuffleEnabledProvider = isShuffleEnabledProvider,
             shuffleTransitionInProgress = shuffleTransitionInProgress,
             repeatModeProvider = repeatModeProvider,
@@ -902,8 +907,14 @@ fun FullPlayerContent(
     }
     AnimatedVisibility(
         visible = showLyricsSheet,
-        enter = slideInVertically(initialOffsetY = { it / 2 }) + fadeIn(),
-        exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut()
+        enter = slideInVertically(
+            initialOffsetY = { it / 5 },
+            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+        ) + fadeIn(animationSpec = tween(durationMillis = 160)),
+        exit = slideOutVertically(
+            targetOffsetY = { it / 6 },
+            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+        ) + fadeOut(animationSpec = tween(durationMillis = 120))
     ) {
         LyricsSheet(
             stablePlayerStateFlow = playerViewModel.stablePlayerState,
@@ -916,7 +927,7 @@ fun FullPlayerContent(
             onSearchLyrics = { forcePick -> playerViewModel.fetchLyricsForCurrentSong(forcePick) },
             onPickResult = { playerViewModel.acceptLyricsSearchResultForCurrentSong(it) },
             onManualSearch = { title, artist -> playerViewModel.searchLyricsManually(title, artist) },
-            onImportLyrics = { filePickerLauncher.launch(arrayOf("*/*")) },
+            onImportLyrics = { filePickerLauncher.launch(com.rve.musicplayer.utils.LyricsImportSecurity.pickerMimeTypes()) },
             onDismissLyricsSearch = { playerViewModel.resetLyricsSearchState() },
             lyricsSyncOffset = lyricsSyncOffset,
             onLyricsSyncOffsetChange = { currentSong?.id?.let { songId -> playerViewModel.setLyricsSyncOffset(songId, it) } },
@@ -949,43 +960,18 @@ fun FullPlayerContent(
         )
     }
 
-    val artistPickerSheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val artistPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     if (showArtistPicker && currentSongArtists.isNotEmpty()) {
-        ModalBottomSheet(
-            onDismissRequest = { showArtistPicker = false },
-            sheetState = artistPickerSheetState
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.artist_picker_title), // short label; keep UI minimal
-                    style = MaterialTheme.typography.titleMedium,
-                    color = LocalMaterialTheme.current.onPrimaryContainer,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                currentSongArtists.forEachIndexed { index, artistItem ->
-                    Text(
-                        text = artistItem.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = LocalMaterialTheme.current.onPrimaryContainer,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 10.dp)
-                            .clickable {
-                                playerViewModel.triggerArtistNavigationFromPlayer(artistItem.id)
-                                showArtistPicker = false
-                            }
-                    )
-                    if (index != currentSongArtists.lastIndex) {
-                        HorizontalDivider(color = LocalMaterialTheme.current.outlineVariant)
-                    }
-                }
+        PlayerArtistPickerBottomSheet(
+            song = song,
+            artists = currentSongArtists,
+            sheetState = artistPickerSheetState,
+            onDismiss = { showArtistPicker = false },
+            onArtistClick = { artist ->
+                playerViewModel.triggerArtistNavigationFromPlayer(artist.id)
+                showArtistPicker = false
             }
-        }
+        )
     }
 }
 
@@ -1007,6 +993,7 @@ private fun FullPlayerAlbumCoverSection(
     albumArtQuality: AlbumArtQuality,
     requestedScrollIndex: Int?,
     onSongSelected: (Song) -> Unit,
+    onAlbumClick: (Song) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val shouldDelay = loadingTweaks.delayAll || loadingTweaks.delayAlbumCarousel
@@ -1078,6 +1065,7 @@ private fun FullPlayerAlbumCoverSection(
                         onSongSelected(newSong)
                     }
                 },
+                onAlbumClick = onAlbumClick,
                 carouselStyle = carouselStyle,
                 modifier = Modifier
                     .height(carouselHeight)
@@ -1103,10 +1091,8 @@ private fun FullPlayerControlsSection(
     onPrevious: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
-    playerSecondaryAccentColor: Color,
-    playerAccentColor: Color,
-    playerOnAccentColor: Color,
-    controlTintOtherIcons: Color,
+    transportPlayPauseColors: TransportButtonColors,
+    transportSkipColors: TransportButtonColors,
     isShuffleEnabledProvider: () -> Boolean,
     shuffleTransitionInProgress: Boolean,
     repeatModeProvider: () -> Int,
@@ -1153,14 +1139,14 @@ private fun FullPlayerControlsSection(
                 height = 80.dp,
                 pressAnimationSpec = stableControlAnimationSpec,
                 releaseDelay = 220L,
-                colorOtherButtons = playerSecondaryAccentColor,
-                colorPlayPause = playerAccentColor,
-                tintPlayPauseIcon = playerOnAccentColor,
-                tintOtherIcons = controlTintOtherIcons,
-                colorPreviousButton = playerOnAccentColor,
-                colorNextButton = playerOnAccentColor,
-                tintPreviousIcon = playerAccentColor,
-                tintNextIcon = playerAccentColor
+                colorOtherButtons = transportSkipColors.container,
+                colorPlayPause = transportPlayPauseColors.container,
+                tintPlayPauseIcon = transportPlayPauseColors.content,
+                tintOtherIcons = transportSkipColors.content,
+                colorPreviousButton = transportSkipColors.container,
+                colorNextButton = transportSkipColors.container,
+                tintPreviousIcon = transportSkipColors.content,
+                tintNextIcon = transportSkipColors.content
             )
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -1197,7 +1183,7 @@ private fun FullPlayerProgressSection(
     expansionFractionProvider: () -> Float,
     isPlayingProvider: () -> Boolean,
     currentSheetState: PlayerSheetState,
-    playerAccentColor: Color,
+    progressActiveColor: Color,
     playerOnBaseColor: Color,
     allowRealtimeUpdates: Boolean,
     isSheetDragGestureActive: Boolean,
@@ -1217,9 +1203,9 @@ private fun FullPlayerProgressSection(
         expansionFractionProvider = expansionFractionProvider,
         isPlayingProvider = isPlayingProvider,
         currentSheetState = currentSheetState,
-        activeTrackColor = playerAccentColor,
+        activeTrackColor = progressActiveColor,
         inactiveTrackColor = playerOnBaseColor.copy(alpha = 0.2f),
-        thumbColor = playerAccentColor,
+        thumbColor = progressActiveColor,
         timeTextColor = playerOnBaseColor,
         allowRealtimeUpdates = allowRealtimeUpdates,
         isSheetDragGestureActive = isSheetDragGestureActive,
@@ -1871,11 +1857,13 @@ private fun EfficientTimeLabels(
             Text(
                 posStr,
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                fontWeight = FontWeight.SemiBold,
                 color = textColor
             )
             Text(
                 durStr,
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                fontWeight = FontWeight.SemiBold,
                 color = textColor
             )
         }
@@ -2444,6 +2432,25 @@ private fun ControlsPlaceholder(color: Color, onColor: Color) {
             }
         }
     }
+}
+
+private data class TransportButtonColors(
+    val container: Color,
+    val content: Color
+)
+
+private fun expressivePlayPauseButtonColors(colorScheme: ColorScheme): TransportButtonColors {
+    return TransportButtonColors(
+        container = colorScheme.tertiaryFixedDim,
+        content = colorScheme.onTertiaryFixed
+    )
+}
+
+private fun expressiveSkipButtonColors(colorScheme: ColorScheme): TransportButtonColors {
+    return TransportButtonColors(
+        container = colorScheme.secondaryFixedDim,
+        content = colorScheme.onSecondaryFixed
+    )
 }
 
 @Composable

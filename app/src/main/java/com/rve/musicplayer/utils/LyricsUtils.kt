@@ -443,6 +443,7 @@ object LyricsUtils {
                     val words = mutableListOf<SyncedWord>()
                     val parts = text.split(LRC_WORD_SPLIT_REGEX)
                     val displayText = LRC_WORD_TAG_REGEX.replace(text, "")
+                    var pendingWordBoundary = false
 
                     for (part in parts) {
                         if (part.isEmpty()) continue
@@ -452,15 +453,26 @@ object LyricsUtils {
                             val wordSeconds = wordMatcher.group(2)?.toLong() ?: 0
                             val wordFraction = wordMatcher.group(3)?.toLong() ?: 0
                             val wordText = stripFormatCharacters(wordMatcher.group(4) ?: "")
-                            val timedWordText = wordText
+                            val timedWordTextRaw = wordText
                                 .substringBefore('\n')
                                 .substringBefore('\r')
                                 .substringBefore("\\n")
                                 .substringBefore("\\r")
+                            val startsNewWord = words.isEmpty() ||
+                                pendingWordBoundary ||
+                                timedWordTextRaw.firstOrNull()?.isWhitespace() == true
+                            val timedWordText = timedWordTextRaw.trim()
+                            pendingWordBoundary = timedWordTextRaw.lastOrNull()?.isWhitespace() == true
                             val wordMillis = if (wordMatcher.group(3)?.length == 2) wordFraction * 10 else wordFraction
                             val wordTimestamp = wordMinutes * 60 * 1000 + wordSeconds * 1000 + wordMillis
                             if (timedWordText.isNotEmpty()) {
-                                words.add(SyncedWord(wordTimestamp.toInt(), timedWordText))
+                                words.add(
+                                    SyncedWord(
+                                        time = wordTimestamp.toInt(),
+                                        word = timedWordText,
+                                        startsNewWord = startsNewWord
+                                    )
+                                )
                             }
                         } else {
                             // Preserve only leading untagged text as a timed word.
@@ -468,9 +480,20 @@ object LyricsUtils {
                             // but must not steal word highlight timing.
                             if (words.isEmpty()) {
                                 val leading = stripFormatCharacters(part)
-                                if (leading.isNotEmpty()) {
-                                    words.add(SyncedWord(lineTimestamp.toInt(), leading))
+                                val startsNewWord = pendingWordBoundary || leading.firstOrNull()?.isWhitespace() == true
+                                val visibleLeading = leading.trim()
+                                pendingWordBoundary = leading.lastOrNull()?.isWhitespace() == true
+                                if (visibleLeading.isNotEmpty()) {
+                                    words.add(
+                                        SyncedWord(
+                                            time = lineTimestamp.toInt(),
+                                            word = visibleLeading,
+                                            startsNewWord = words.isEmpty() || startsNewWord
+                                        )
+                                    )
                                 }
+                            } else if (part.any { it.isWhitespace() }) {
+                                pendingWordBoundary = true
                             }
                         }
                     }

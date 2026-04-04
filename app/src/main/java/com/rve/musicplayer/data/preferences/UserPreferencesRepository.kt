@@ -146,6 +146,8 @@ constructor(
 
         // Multi-Artist Settings
         val ARTIST_DELIMITERS = stringPreferencesKey("artist_delimiters")
+        val ARTIST_WORD_DELIMITERS = stringPreferencesKey("artist_word_delimiters")
+        val EXTRACT_ARTISTS_FROM_TITLE = booleanPreferencesKey("extract_artists_from_title")
         val GROUP_BY_ALBUM_ARTIST = booleanPreferencesKey("group_by_album_artist")
         val ARTIST_SETTINGS_RESCAN_REQUIRED =
                 booleanPreferencesKey("artist_settings_rescan_required")
@@ -399,6 +401,43 @@ constructor(
 
     suspend fun resetArtistDelimitersToDefault() {
         setArtistDelimiters(DEFAULT_ARTIST_DELIMITERS)
+    }
+
+    val artistWordDelimitersFlow: Flow<List<String>> =
+        dataStore.data.map { preferences ->
+            val stored = preferences[PreferencesKeys.ARTIST_WORD_DELIMITERS]
+            if (stored != null) {
+                try {
+                    json.decodeFromString<List<String>>(stored)
+                } catch (e: Exception) {
+                    DEFAULT_ARTIST_WORD_DELIMITERS
+                }
+            } else {
+                DEFAULT_ARTIST_WORD_DELIMITERS
+            }
+        }
+
+    suspend fun setArtistWordDelimiters(delimiters: List<String>) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.ARTIST_WORD_DELIMITERS] = json.encodeToString(delimiters)
+            preferences[PreferencesKeys.ARTIST_SETTINGS_RESCAN_REQUIRED] = true
+        }
+    }
+
+    suspend fun resetArtistWordDelimitersToDefault() {
+        setArtistWordDelimiters(DEFAULT_ARTIST_WORD_DELIMITERS)
+    }
+
+    val extractArtistsFromTitleFlow: Flow<Boolean> =
+        dataStore.data.map { preferences ->
+            preferences[PreferencesKeys.EXTRACT_ARTISTS_FROM_TITLE] ?: true // Enabled by default
+        }
+
+    suspend fun setExtractArtistsFromTitle(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.EXTRACT_ARTISTS_FROM_TITLE] = enabled
+            preferences[PreferencesKeys.ARTIST_SETTINGS_RESCAN_REQUIRED] = true
+        }
     }
 
     val groupByAlbumArtistFlow: Flow<Boolean> =
@@ -1141,8 +1180,10 @@ constructor(
     }
 
     companion object {
-        /** Default delimiters for splitting multi-artist tags */
+        /** Default character delimiters for splitting multi-artist tags */
         val DEFAULT_ARTIST_DELIMITERS = listOf("/", ";", ",", "+", "&")
+        /** Default word-based delimiters (matched case-insensitively with whitespace boundaries) */
+        val DEFAULT_ARTIST_WORD_DELIMITERS = listOf("featuring", "feat.", "feat", "ft.", "ft", "vs.", "vs", "versus", "with", "prod.", "prod")
     }
 
     val navBarCornerRadiusFlow: Flow<Int> =

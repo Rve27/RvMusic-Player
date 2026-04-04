@@ -90,7 +90,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import coil.size.Size
+import com.rve.musicplayer.R
 import com.rve.musicplayer.data.model.Song
+import com.rve.musicplayer.presentation.components.scoped.PlayerAlbumNavigationEffect
 import com.rve.musicplayer.presentation.components.scoped.PlayerArtistNavigationEffect
 import com.rve.musicplayer.presentation.components.scoped.PlayerSheetPredictiveBackHandler
 import com.rve.musicplayer.presentation.components.scoped.QueueSheetRuntimeEffects
@@ -111,6 +113,7 @@ import com.rve.musicplayer.presentation.components.scoped.rememberSheetVisualSta
 import com.rve.musicplayer.presentation.components.scoped.SheetMotionController
 import com.rve.musicplayer.presentation.viewmodel.PlayerSheetState
 import com.rve.musicplayer.presentation.viewmodel.PlayerViewModel
+import com.rve.musicplayer.presentation.viewmodel.StablePlayerState
 import com.rve.musicplayer.ui.theme.GoogleSansRounded
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -258,6 +261,12 @@ fun UnifiedPlayerSheet(
     }
 
     PlayerArtistNavigationEffect(
+        navController = navController,
+        sheetCollapsedTargetY = sheetCollapsedTargetY,
+        sheetMotionController = sheetMotionController,
+        playerViewModel = playerViewModel
+    )
+    PlayerAlbumNavigationEffect(
         navController = navController,
         sheetCollapsedTargetY = sheetCollapsedTargetY,
         sheetMotionController = sheetMotionController,

@@ -10,6 +10,8 @@ import com.rve.musicplayer.data.model.Song
 import com.rve.musicplayer.utils.LocalArtworkUri
 import com.rve.musicplayer.utils.normalizeMetadataText
 import com.rve.musicplayer.utils.normalizeMetadataTextOrEmpty
+import org.json.JSONArray
+import org.json.JSONObject
 
 @Entity(
     tableName = "songs",
@@ -65,7 +67,8 @@ data class SongEntity(
     @ColumnInfo(name = "bitrate") val bitrate: Int? = null, // bits per second
     @ColumnInfo(name = "sample_rate") val sampleRate: Int? = null, // Hz
     @ColumnInfo(name = "telegram_chat_id") val telegramChatId: Long? = null, // Added for Telegram integration
-    @ColumnInfo(name = "telegram_file_id") val telegramFileId: Int? = null // Added for Telegram integration
+    @ColumnInfo(name = "telegram_file_id") val telegramFileId: Int? = null, // Added for Telegram integration
+    @ColumnInfo(name = "artists_json") val artistsJson: String? = null // Serialized list of ArtistRef for efficient loading
 )
 
 private fun SongEntity.toSongInternal(artists: List<ArtistRef>): Song {
@@ -119,7 +122,43 @@ private fun SongEntity.toSongInternal(artists: List<ArtistRef>): Song {
 }
 
 fun SongEntity.toSong(): Song {
-    return toSongInternal(artists = emptyList())
+    val artists = parseArtistsJson(this.artistsJson)
+    return toSongInternal(artists = artists)
+}
+
+/**
+ * Parses the artists_json column back into a list of ArtistRef.
+ */
+private fun parseArtistsJson(json: String?): List<ArtistRef> {
+    if (json.isNullOrBlank()) return emptyList()
+    return try {
+        val arr = JSONArray(json)
+        (0 until arr.length()).map { i ->
+            val obj = arr.getJSONObject(i)
+            ArtistRef(
+                id = obj.getLong("id"),
+                name = obj.getString("name"),
+                isPrimary = obj.optBoolean("primary", false)
+            )
+        }
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+/**
+ * Serializes a list of ArtistRef to JSON for storage in artists_json column.
+ */
+fun serializeArtistRefs(artists: List<ArtistRef>): String {
+    val arr = JSONArray()
+    artists.forEach { ref ->
+        arr.put(JSONObject().apply {
+            put("id", ref.id)
+            put("name", ref.name)
+            put("primary", ref.isPrimary)
+        })
+    }
+    return arr.toString()
 }
 
 /**
