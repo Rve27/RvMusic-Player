@@ -23,8 +23,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.rve.musicplayer.data.model.Song
 import com.rve.musicplayer.presentation.components.SmartImage
+import com.rve.musicplayer.presentation.components.SmartImageListTargetSize
 import com.rve.musicplayer.utils.formatDuration
 import racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape
 
@@ -50,6 +52,7 @@ fun ExpressiveSongListItem(
             SmartImage(
                 model = song.albumArtUriString,
                 contentDescription = "Album art for ${song.title}",
+                targetSize = SmartImageListTargetSize,
                 modifier = Modifier
                     .size(56.dp)
                     .clip(AbsoluteSmoothCornerShape(12.dp, 60)),

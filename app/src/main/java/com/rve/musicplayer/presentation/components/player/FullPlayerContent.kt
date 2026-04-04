@@ -1,6 +1,7 @@
 package com.rve.musicplayer.presentation.components.player
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.res.Configuration
 import android.net.Uri
 import com.rve.musicplayer.data.model.Lyrics
@@ -121,8 +122,13 @@ import com.rve.musicplayer.presentation.viewmodel.PlayerSheetState
 import com.rve.musicplayer.presentation.viewmodel.PlayerViewModel
 import com.rve.musicplayer.ui.theme.GoogleSansRounded
 import com.rve.musicplayer.utils.AudioMetaUtils.mimeTypeToFormat
+import com.rve.musicplayer.utils.LyricsImportFailureReason
+import com.rve.musicplayer.utils.LyricsImportSecurity
+import com.rve.musicplayer.utils.LyricsImportValidationResult
+import com.rve.musicplayer.utils.ValidatedLyricsImport
 import com.rve.musicplayer.utils.formatDuration
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape
 import timber.log.Timber
@@ -132,12 +138,45 @@ import com.rve.musicplayer.presentation.components.WavySliderExpressive
 import com.rve.musicplayer.presentation.components.ToggleSegmentButton
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.withContext
 
 private const val PREVIOUS_TRACK_RESTART_THRESHOLD_MS = 10_000L
 private const val SPAM_SKIP_SERIALIZATION_MS = 360L
 private const val NO_TARGET_SKIP_SERIALIZATION_MS = 140L
 
 private enum class SkipDirection { PREVIOUS, NEXT }
+
+private suspend fun validateLyricsImport(
+    context: Context,
+    uri: Uri
+): LyricsImportValidationResult = withContext(Dispatchers.IO) {
+    val contentResolver = context.contentResolver
+
+    var fileName = ""
+    var fileSize: Long? = null
+    contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+        val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+        if (cursor.moveToFirst()) {
+            fileName = if (nameIndex != -1) cursor.getString(nameIndex) else ""
+            fileSize = if (sizeIndex != -1 && !cursor.isNull(sizeIndex)) {
+                cursor.getLong(sizeIndex)
+            } else {
+                null
+            }
+        }
+    }
+
+    contentResolver.openInputStream(uri)?.use { inputStream ->
+        LyricsImportSecurity.validateImportedLyricsFile(
+            fileName = fileName,
+            mimeType = contentResolver.getType(uri),
+            inputStream = inputStream,
+            reportedSizeBytes = fileSize
+        )
+    } ?: LyricsImportValidationResult.Invalid(LyricsImportFailureReason.EMPTY_CONTENT)
+}
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @SuppressLint("StateFlowValueCalledInComposition")
@@ -223,62 +262,37 @@ fun FullPlayerContent(
     var totalDrag by remember { mutableStateOf(0f) }
 
     val context = LocalContext.current
+    val fileImportScope = rememberCoroutineScope()
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri: Uri? ->
             uri?.let {
-                try {
-                    val contentResolver = context.contentResolver
-                    
-                    // Resolve file metadata up front, but do not trust provider size alone.
-                    var fileName = ""
-                    var fileSize: Long? = null
-                    contentResolver.query(it, null, null, null, null)?.use { cursor ->
-                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                        val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
-                        if (cursor.moveToFirst()) {
-                            fileName = if (nameIndex != -1) cursor.getString(nameIndex) else ""
-                            fileSize = if (sizeIndex != -1 && !cursor.isNull(sizeIndex)) {
-                                cursor.getLong(sizeIndex)
-                            } else {
-                                null
+                fileImportScope.launch {
+                    try {
+                        val validation = validateLyricsImport(context, it)
+                        val validatedImport: ValidatedLyricsImport = when (validation) {
+                            is LyricsImportValidationResult.Valid -> validation.value
+                            is LyricsImportValidationResult.Invalid -> {
+                                playerViewModel.sendToast(
+                                    LyricsImportSecurity.messageFor(validation.reason)
+                                )
+                                return@launch
                             }
                         }
-                    }
 
-                    val validation = contentResolver.openInputStream(it)?.use { inputStream ->
-                        com.rve.musicplayer.utils.LyricsImportSecurity.validateImportedLyricsFile(
-                            fileName = fileName,
-                            mimeType = contentResolver.getType(it),
-                            inputStream = inputStream,
-                            reportedSizeBytes = fileSize
-                        )
-                    } ?: com.rve.musicplayer.utils.LyricsImportValidationResult.Invalid(
-                        com.rve.musicplayer.utils.LyricsImportFailureReason.EMPTY_CONTENT
-                    )
-
-                    val validatedImport = when (validation) {
-                        is com.rve.musicplayer.utils.LyricsImportValidationResult.Valid -> validation.value
-                        is com.rve.musicplayer.utils.LyricsImportValidationResult.Invalid -> {
-                            playerViewModel.sendToast(
-                                com.rve.musicplayer.utils.LyricsImportSecurity.messageFor(validation.reason)
-                            )
-                            return@let
+                        val currentSongId = currentSong?.id?.toLongOrNull()
+                        if (currentSongId == null) {
+                            playerViewModel.sendToast("No song selected for lyrics import.")
+                            return@launch
                         }
-                    }
 
-                    val currentSongId = currentSong?.id?.toLongOrNull()
-                    if (currentSongId == null) {
-                        playerViewModel.sendToast("No song selected for lyrics import.")
-                        return@let
+                        playerViewModel.importLyricsFromFile(currentSongId, validatedImport)
+                        showFetchLyricsDialog = false
+                        showLyricsSheet = true
+                    } catch (e: Exception) {
+                        Timber.e(e, "Error reading imported lyrics file")
+                        playerViewModel.sendToast("Error reading file.")
                     }
-
-                    playerViewModel.importLyricsFromFile(currentSongId, validatedImport)
-                    showFetchLyricsDialog = false
-                    showLyricsSheet = true
-                } catch (e: Exception) {
-                    Timber.e(e, "Error reading imported lyrics file")
-                    playerViewModel.sendToast("Error reading file.")
                 }
             }
         }

@@ -2752,14 +2752,14 @@ fun LibraryFoldersTab(
                                     top = 0.dp                            )
                             ) {
                                 if (showPlaylistCards) {
-                                    items(itemsToShow, key = { it.path }) { folder ->
+                                    items(itemsToShow, key = { it.path }, contentType = { "folder_card" }) { folder ->
                                         FolderPlaylistItem(
                                             folder = folder,
                                             onClick = { onFolderAsPlaylistClick(folder) }
                                         )
                                     }
                                 } else {
-                                    items(itemsToShow, key = { it.path }) { folder ->
+                                    items(itemsToShow, key = { it.path }, contentType = { "folder_list" }) { folder ->
                                         FolderListItem(
                                             folder = folder,
                                             onClick = { onFolderClick(folder.path) }
@@ -2767,7 +2767,7 @@ fun LibraryFoldersTab(
                                     }
                                 }
 
-                                items(songsToShow, key = { it.id }) { song ->
+                                items(songsToShow, key = { it.id }, contentType = { "song" }) { song ->
                                     EnhancedSongListItem(
                                         song = song,
                                         isPlaying = stablePlayerState.currentSong?.id == song.id && stablePlayerState.isPlaying,

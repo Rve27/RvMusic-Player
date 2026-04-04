@@ -219,7 +219,7 @@ fun RecentlyPlayedScreen(
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
-                        items(group.songs, key = { songUi -> songUi.song.id }) { item ->
+                        items(group.songs, key = { songUi -> songUi.song.id }, contentType = { "recently_played_song" }) { item ->
                             EnhancedSongListItem(
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 song = item.song,

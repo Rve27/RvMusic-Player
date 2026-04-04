@@ -134,16 +134,12 @@ object AppModule {
             PixelPlayDatabase.MIGRATION_30_31,
             PixelPlayDatabase.MIGRATION_31_32,
             PixelPlayDatabase.MIGRATION_32_33,
-            PixelPlayDatabase.MIGRATION_33_34
+            PixelPlayDatabase.MIGRATION_33_34,
+            PixelPlayDatabase.MIGRATION_34_35,
+            PixelPlayDatabase.MIGRATION_35_36
         )
-            .addCallback(
-                object : RoomDatabase.Callback() {
-                    override fun onCreate(db: SupportSQLiteDatabase) {
-                        super.onCreate(db)
-                        PixelPlayDatabase.installFavoriteSyncTriggers(db)
-                    }
-                }
-            )
+            .addCallback(PixelPlayDatabase.createRuntimeArtifactsCallback())
+            .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
 
         // P2-4: Only allow destructive migration in debug builds.
         // In release, a migration bug will crash the app (revealing the problem)

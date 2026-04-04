@@ -167,7 +167,16 @@ abstract class CloudStreamProxy<K : Any>(
     }
 
     private fun createServer(port: Int): ApplicationEngine {
-        return embeddedServer(CIO, host = "127.0.0.1", port = port) {
+        return embeddedServer(
+            CIO,
+            host = "127.0.0.1",
+            port = port,
+            configure = {
+                // Match our port-probing behavior and make fast restarts less likely to fail
+                // with "Address already in use" while sockets from the previous server drain.
+                reuseAddress = true
+            }
+        ) {
             routing {
                 get(routePath) {
                     val rawParam = call.parameters[routeParamName]

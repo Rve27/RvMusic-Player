@@ -413,7 +413,8 @@ class PlayerViewModel @Inject constructor(
             "DEEPSEEK" -> deepseekKey.isNotBlank()
             else -> geminiKey.isNotBlank()
         }
-    }.stateIn(
+    }.distinctUntilChanged()
+        .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = false
@@ -938,6 +939,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     private var mediaController: MediaController? = null
+    private var mediaControllerPlaybackListener: Player.Listener? = null
     private val _isMediaControllerReady = MutableStateFlow(false)
     val isMediaControllerReady: StateFlow<Boolean> = _isMediaControllerReady.asStateFlow()
     // SessionToken injected via constructor
@@ -1003,7 +1005,8 @@ class PlayerViewModel @Inject constructor(
         favoriteSongIds
     ) { songId, ids ->
         songId?.let { ids.contains(it) } ?: false
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     // ---------------------------------------------------------------------------
     // FullPlayerSlice — consolidates 11 independent flows into ONE subscription.
@@ -1096,6 +1099,58 @@ class PlayerViewModel @Inject constructor(
     }
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FullPlayerSlice())
+
+    // ---------------------------------------------------------------------------
+    // PlayerConfigSlice — consolidates 7 infrequently-changing preference flows
+    // into ONE subscription. Previously UnifiedPlayerSheet(V2) had 7 separate
+    // collectAsStateWithLifecycle() calls for config values, each causing a full
+    // sheet recomposition when any preference changed.
+    // ---------------------------------------------------------------------------
+    data class PlayerConfigSlice(
+        val navBarCornerRadius: Int = 32,
+        val navBarStyle: String = NavBarStyle.DEFAULT,
+        val carouselStyle: String = CarouselStyle.NO_PEEK,
+        val fullPlayerLoadingTweaks: FullPlayerLoadingTweaks = FullPlayerLoadingTweaks(),
+        val tapBackgroundClosesPlayer: Boolean = true,
+        val useSmoothCorners: Boolean = true,
+        val playerThemePreference: String = ThemePreference.ALBUM_ART
+    )
+
+    private val playerConfigSlicePart1 = combine(
+        navBarCornerRadius,
+        navBarStyle,
+        carouselStyle,
+        fullPlayerLoadingTweaks,
+        tapBackgroundClosesPlayer
+    ) { radius, style, carousel, tweaks, tapClose ->
+        PlayerConfigSlicePart1(radius, style, carousel, tweaks, tapClose)
+    }
+
+    private data class PlayerConfigSlicePart1(
+        val navBarCornerRadius: Int,
+        val navBarStyle: String,
+        val carouselStyle: String,
+        val fullPlayerLoadingTweaks: FullPlayerLoadingTweaks,
+        val tapBackgroundClosesPlayer: Boolean
+    )
+
+    val playerConfigSlice: StateFlow<PlayerConfigSlice> = combine(
+        playerConfigSlicePart1,
+        useSmoothCorners,
+        playerThemePreference
+    ) { p1, smoothCorners, themePref ->
+        PlayerConfigSlice(
+            navBarCornerRadius = p1.navBarCornerRadius,
+            navBarStyle = p1.navBarStyle,
+            carouselStyle = p1.carouselStyle,
+            fullPlayerLoadingTweaks = p1.fullPlayerLoadingTweaks,
+            tapBackgroundClosesPlayer = p1.tapBackgroundClosesPlayer,
+            useSmoothCorners = smoothCorners,
+            playerThemePreference = themePref
+        )
+    }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PlayerConfigSlice())
 
     // Library State - delegated to LibraryStateHolder
     // Favorites now use paginated flow from LibraryStateHolder (DB-level sort & filter)
@@ -1524,7 +1579,6 @@ class PlayerViewModel @Inject constructor(
         mediaControllerFuture.addListener({
             try {
                 mediaController = mediaControllerFuture.get()
-                mediaController?.addListener(mediaControllerListener)
                 // Pass controller to PlaybackStateHolder
                 playbackStateHolder.setMediaController(mediaController)
                 _isMediaControllerReady.value = true
@@ -2042,7 +2096,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun triggerAlbumNavigationFromPlayer(albumId: Long) {
-        if (albumId <= 0) {
+        if (albumId == -1L) {
             Log.d("AlbumDebug", "triggerAlbumNavigationFromPlayer ignored invalid albumId=$albumId")
             return
         }
@@ -2402,7 +2456,8 @@ class PlayerViewModel @Inject constructor(
             }
         }
 
-        playerCtrl.addListener(object : Player.Listener {
+        mediaControllerPlaybackListener?.let(playerCtrl::removeListener)
+        mediaControllerPlaybackListener = object : Player.Listener {
             override fun onVolumeChanged(volume: Float) {
                 _trackVolume.value = volume
             }
@@ -2605,7 +2660,8 @@ class PlayerViewModel @Inject constructor(
                 transitionSchedulerJob?.cancel()
                 updateCurrentPlaybackQueueFromPlayer(mediaController)
             }
-        })
+        }
+        playerCtrl.addListener(checkNotNull(mediaControllerPlaybackListener))
         Trace.endSection()
     }
 
@@ -2807,25 +2863,7 @@ class PlayerViewModel @Inject constructor(
                 foundStartIndex = true
             }
 
-            val metadataBuilder = MediaMetadata.Builder()
-                .setTitle(song.title)
-                .setArtist(song.displayArtist)
-
-            playlistId?.let {
-                val extras = Bundle()
-                extras.putString("playlistId", it)
-                metadataBuilder.setExtras(extras)
-            }
-
-            song.albumArtUriString?.toUri()?.let { uri ->
-                metadataBuilder.setArtworkUri(uri)
-            }
-
-            mediaItems += MediaItem.Builder()
-                .setMediaId(song.id)
-                .setUri(MediaItemBuilder.playbackUri(song.contentUriString))
-                .setMediaMetadata(metadataBuilder.build())
-                .build()
+            mediaItems += buildPlaybackMediaItem(song, playlistId)
         }
 
         PreparedPlaybackQueue(
@@ -2896,8 +2934,13 @@ class PlayerViewModel @Inject constructor(
 
             // Pre-resolve the starting song's cloud URI before ExoPlayer touches it.
             // This populates the resolvedUriCache so resolveDataSpec finds it instantly.
-            val startingUri = MediaItemBuilder.playbackUri(effectiveStartSong.contentUriString)
-            if (startingUri.scheme == "telegram" || startingUri.scheme == "netease" || startingUri.scheme == "qqmusic") {
+            val startingUri = MediaItemBuilder.playbackUri(effectiveStartSong)
+            if (
+                startingUri.scheme == "telegram" ||
+                startingUri.scheme == "netease" ||
+                startingUri.scheme == "qqmusic" ||
+                startingUri.scheme == "navidrome"
+            ) {
                 if (startingUri.scheme == "telegram") {
                     ensureTelegramPlaybackObserversStarted()
                 }
@@ -2940,6 +2983,31 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    private suspend fun buildResolvedPlaybackMediaItem(song: Song): MediaItem {
+        val mediaItem = MediaItemBuilder.build(song)
+        val originalUri = mediaItem.localConfiguration?.uri ?: return mediaItem
+        val scheme = originalUri.scheme
+        if (
+            scheme != "telegram" &&
+            scheme != "netease" &&
+            scheme != "qqmusic" &&
+            scheme != "navidrome"
+        ) {
+            return mediaItem
+        }
+
+        if (scheme == "telegram") {
+            ensureTelegramPlaybackObserversStarted()
+        }
+
+        val resolvedUri = dualPlayerEngine.resolveCloudUri(originalUri)
+        return if (resolvedUri == originalUri) {
+            mediaItem
+        } else {
+            mediaItem.buildUpon().setUri(resolvedUri).build()
+        }
+    }
+
 
     private fun loadAndPlaySong(song: Song) {
         cancelPendingFullQueuePlayback()
@@ -2961,17 +3029,15 @@ class PlayerViewModel @Inject constructor(
             return
         }
 
-        val mediaItem = MediaItem.Builder()
-            .setMediaId(song.id)
-            .setUri(MediaItemBuilder.playbackUri(song.contentUriString))
-            .setMediaMetadata(MediaItemBuilder.build(song).mediaMetadata)
-            .build()
-        if (controller.currentMediaItem?.mediaId == song.id) {
-            if (!controller.isPlaying) controller.play()
-        } else {
-            controller.setMediaItem(mediaItem)
-            controller.prepare()
-            controller.play()
+        viewModelScope.launch {
+            val mediaItem = buildResolvedPlaybackMediaItem(song)
+            if (controller.currentMediaItem?.mediaId == song.id) {
+                if (!controller.isPlaying) controller.play()
+            } else {
+                controller.setMediaItem(mediaItem)
+                controller.prepare()
+                controller.play()
+            }
         }
     }
 
@@ -3033,15 +3099,7 @@ class PlayerViewModel @Inject constructor(
 
     fun addSongToQueue(song: Song) {
         mediaController?.let { controller ->
-            val mediaItem = MediaItem.Builder()
-                .setMediaId(song.id)
-                .setUri(MediaItemBuilder.playbackUri(song.contentUriString))
-                .setMediaMetadata(MediaMetadata.Builder()
-                    .setTitle(song.title)
-                    .setArtist(song.displayArtist)
-                    .setArtworkUri(song.albumArtUriString?.toUri())
-                    .build())
-                .build()
+            val mediaItem = buildPlaybackMediaItem(song)
             controller.addMediaItem(mediaItem)
             // Queue UI is synced via onTimelineChanged listener
         }
@@ -3049,17 +3107,7 @@ class PlayerViewModel @Inject constructor(
 
     fun addSongNextToQueue(song: Song) {
         mediaController?.let { controller ->
-            val mediaItem = MediaItem.Builder()
-                .setMediaId(song.id)
-                .setUri(MediaItemBuilder.playbackUri(song.contentUriString))
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(song.title)
-                        .setArtist(song.displayArtist)
-                        .setArtworkUri(song.albumArtUriString?.toUri())
-                        .build()
-                )
-                .build()
+            val mediaItem = buildPlaybackMediaItem(song)
 
             val insertionIndex = if (controller.currentMediaItemIndex != C.INDEX_UNSET) {
                 (controller.currentMediaItemIndex + 1).coerceAtMost(controller.mediaItemCount)
@@ -3070,6 +3118,25 @@ class PlayerViewModel @Inject constructor(
             controller.addMediaItem(insertionIndex, mediaItem)
             // Queue UI is synced via onTimelineChanged listener
         }
+    }
+
+    private fun buildPlaybackMediaItem(song: Song, playlistId: String? = null): MediaItem {
+        val baseItem = MediaItemBuilder.build(song)
+        if (playlistId == null) {
+            return baseItem
+        }
+
+        val mergedExtras = Bundle(baseItem.mediaMetadata.extras ?: Bundle()).apply {
+            putString("playlistId", playlistId)
+        }
+
+        return baseItem.buildUpon()
+            .setMediaMetadata(
+                baseItem.mediaMetadata.buildUpon()
+                    .setExtras(mergedExtras)
+                    .build()
+            )
+            .build()
     }
 
     // =====================================================
@@ -3720,6 +3787,14 @@ class PlayerViewModel @Inject constructor(
 
 
     override fun onCleared() {
+        mediaControllerPlaybackListener?.let { listener ->
+            mediaController?.removeListener(listener)
+            mediaControllerPlaybackListener = null
+        }
+        playbackStateHolder.setMediaController(null)
+        mediaController?.release()
+        mediaController = null
+        mediaControllerFuture.cancel(true)
         super.onCleared()
         remoteQueueLoadJob?.cancel()
         castSongUiSyncJob?.cancel()
@@ -4111,27 +4186,15 @@ class PlayerViewModel @Inject constructor(
 
     fun playSong(song: Song) {
         viewModelScope.launch {
-             val controller = mediaController ?: return@launch
-             
-             val mediaItem = MediaItem.Builder()
-                 .setMediaId(song.id)
-                 .setUri(Uri.parse(song.contentUriString ?: song.path))
-                 .setMediaMetadata(
-                     MediaMetadata.Builder()
-                         .setTitle(song.title)
-                         .setArtist(song.displayArtist)
-                         .setArtworkUri(if (song.albumArtUriString != null) Uri.parse(song.albumArtUriString) else null)
-                         .build()
-                 )
-                 .build()
-                 
-             controller.setMediaItem(mediaItem)
-             controller.prepare()
-             controller.play()
-             
-             // Also ensure sheet is visible
-             _isSheetVisible.value = true
-             _sheetState.value = PlayerSheetState.EXPANDED
+            val controller = mediaController ?: return@launch
+            val mediaItem = buildResolvedPlaybackMediaItem(song)
+
+            controller.setMediaItem(mediaItem)
+            controller.prepare()
+            controller.play()
+
+            _isSheetVisible.value = true
+            _sheetState.value = PlayerSheetState.EXPANDED
         }
     }
 

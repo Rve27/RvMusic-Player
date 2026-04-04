@@ -36,7 +36,15 @@ class TelegramStreamProxy @Inject constructor(
     private var startJob: Job? = null
 
     private fun createServer(port: Int): ApplicationEngine {
-        return embeddedServer(CIO, host = "127.0.0.1", port = port) {
+        return embeddedServer(
+            CIO,
+            host = "127.0.0.1",
+            port = port,
+            configure = {
+                // Fast proxy restarts can otherwise fail if the previous socket is still draining.
+                reuseAddress = true
+            }
+        ) {
             routing {
                 get("/stream/{fileId}") {
                     val fileId = call.parameters["fileId"]?.toIntOrNull()

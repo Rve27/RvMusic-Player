@@ -151,7 +151,7 @@ fun AlbumCarouselSection(
                         .fillMaxSize()
                         .aspectRatio(1f)
                         .clickable(
-                            enabled = isFocusedItem && song.albumId > 0L,
+                            enabled = isFocusedItem && song.albumId != -1L,
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                             onClick = { onAlbumClick(song) }

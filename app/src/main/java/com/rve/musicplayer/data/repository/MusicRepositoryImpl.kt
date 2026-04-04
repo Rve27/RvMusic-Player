@@ -56,13 +56,16 @@ import com.rve.musicplayer.utils.StorageUtils
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -104,6 +107,7 @@ class MusicRepositoryImpl @Inject constructor(
     // Tracks the active prefetch job so a new flow emission cancels the previous one.
     @Volatile private var prefetchJob: Job? = null
     @Volatile private var currentSongArtistPrefetchJob: Job? = null
+    @Volatile private var currentSongArtistPrefetchSongId: Long? = null
     @Volatile private var telegramDownloadSyncObserverStarted = false
     private val telegramCacheManager: com.rve.musicplayer.data.telegram.TelegramCacheManager
         get() = telegramCacheManagerProvider.get()
@@ -112,6 +116,22 @@ class MusicRepositoryImpl @Inject constructor(
 
     private fun normalizePath(path: String): String =
         runCatching { File(path).canonicalPath }.getOrElse { File(path).absolutePath }
+
+    /** Cached directory filter — recomputed only when allowed/blocked dirs preferences change. */
+    data class CachedDirFilter(val allowedParentDirs: List<String> = emptyList(), val applyFilter: Boolean = false)
+
+    private val cachedDirFilter: StateFlow<CachedDirFilter> = combine(
+        userPreferencesRepository.allowedDirectoriesFlow,
+        userPreferencesRepository.blockedDirectoriesFlow
+    ) { allowed, blocked ->
+        val (dirs, apply) = DirectoryFilterUtils.computeAllowedParentDirs(
+            allowedDirs = allowed,
+            blockedDirs = blocked,
+            getAllParentDirs = { musicDao.getDistinctParentDirectories() },
+            normalizePath = ::normalizePath
+        )
+        CachedDirFilter(dirs, apply)
+    }.stateIn(repositoryScope, SharingStarted.Eagerly, CachedDirFilter())
 
     private fun ensureTelegramDownloadSyncObserverStarted() {
         if (telegramDownloadSyncObserverStarted) return
@@ -179,12 +199,8 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getRandomSongs(limit: Int): List<Song> = withContext(Dispatchers.IO) {
-        // Use DAO's optimized random query with filter support
-        val allowedDirs = userPreferencesRepository.allowedDirectoriesFlow.first()
-        val blockedDirs = userPreferencesRepository.blockedDirectoriesFlow.first()
-        val (allowedParentDirs, applyFilter) = computeAllowedDirs(allowedDirs, blockedDirs)
-
-        musicDao.getRandomSongs(limit, allowedParentDirs, applyFilter).map { it.toSong() }
+        val filter = cachedDirFilter.value
+        musicDao.getRandomSongs(limit, filter.allowedParentDirs, filter.applyFilter).map { it.toSong() }
     }
 
     override suspend fun saveTelegramSongs(songs: List<Song>) {
@@ -305,7 +321,16 @@ class MusicRepositoryImpl @Inject constructor(
             .onEach { artists ->
                 val missingImages = artists.missingImageCandidates()
                 if (missingImages.isNotEmpty()) {
-                    currentSongArtistPrefetchJob?.cancel()
+                    val isNewSong = currentSongArtistPrefetchSongId != songId
+                    if (isNewSong) {
+                        currentSongArtistPrefetchJob?.cancel()
+                        currentSongArtistPrefetchSongId = songId
+                    } else if (currentSongArtistPrefetchJob?.isActive == true) {
+                        // Room re-emits as artist rows are updated; keep the current song batch
+                        // alive so one successful image write does not cancel the remaining fetches.
+                        return@onEach
+                    }
+
                     currentSongArtistPrefetchJob = repositoryScope.launch {
                         artistImageRepository.prefetchArtistImages(missingImages)
                     }
@@ -818,17 +843,12 @@ class MusicRepositoryImpl @Inject constructor(
         sortOption: SortOption,
         storageFilter: com.rve.musicplayer.data.model.StorageFilter
     ): List<Long> = withContext(Dispatchers.IO) {
-        val allowedDirsFlow = userPreferencesRepository.allowedDirectoriesFlow.first()
-        val blockedDirsFlow = userPreferencesRepository.blockedDirectoriesFlow.first()
-        val (allowedParentDirs, applyFilter) = computeAllowedDirs(allowedDirsFlow, blockedDirsFlow)
-
-        val filterMode = storageFilter.toFilterMode()
-
+        val filter = cachedDirFilter.value
         musicDao.getSongIdsSorted(
-            allowedParentDirs = allowedParentDirs,
-            applyDirectoryFilter = applyFilter,
+            allowedParentDirs = filter.allowedParentDirs,
+            applyDirectoryFilter = filter.applyFilter,
             sortOrder = sortOption.storageKey,
-            filterMode = filterMode
+            filterMode = storageFilter.toFilterMode()
         )
     }
 
@@ -836,17 +856,12 @@ class MusicRepositoryImpl @Inject constructor(
         sortOption: SortOption,
         storageFilter: com.rve.musicplayer.data.model.StorageFilter
     ): List<Long> = withContext(Dispatchers.IO) {
-        val allowedDirsFlow = userPreferencesRepository.allowedDirectoriesFlow.first()
-        val blockedDirsFlow = userPreferencesRepository.blockedDirectoriesFlow.first()
-        val (allowedParentDirs, applyFilter) = computeAllowedDirs(allowedDirsFlow, blockedDirsFlow)
-
-        val filterMode = storageFilter.toFilterMode()
-
+        val filter = cachedDirFilter.value
         musicDao.getFavoriteSongIdsSorted(
-            allowedParentDirs = allowedParentDirs,
-            applyDirectoryFilter = applyFilter,
+            allowedParentDirs = filter.allowedParentDirs,
+            applyDirectoryFilter = filter.applyFilter,
             sortOrder = sortOption.storageKey,
-            filterMode = filterMode
+            filterMode = storageFilter.toFilterMode()
         )
     }
 }

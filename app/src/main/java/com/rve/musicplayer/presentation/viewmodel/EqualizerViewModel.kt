@@ -15,6 +15,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -483,12 +486,11 @@ class EqualizerViewModel @Inject constructor(
             equalizerManager.attachToAudioSessionIfNeeded(audioSessionId)
         }
     }
-    
-    override fun onCleared() {
-        // Flush latest state synchronously to avoid losing debounced values when the screen/app closes.
-        runCatching {
-            kotlinx.coroutines.runBlocking {
-                val latest = _uiState.value
+
+    private fun persistLatestStateAsync() {
+        val latest = _uiState.value
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            runCatching {
                 equalizerPreferencesRepository.setEqualizerEnabled(latest.isEnabled)
                 equalizerPreferencesRepository.setEqualizerPreset(latest.currentPreset.name)
                 equalizerPreferencesRepository.setEqualizerCustomBands(equalizerManager.bandLevels.value)
@@ -498,15 +500,18 @@ class EqualizerViewModel @Inject constructor(
                 equalizerPreferencesRepository.setVirtualizerStrength(latest.virtualizerStrength.toInt().coerceIn(0, 1000))
                 equalizerPreferencesRepository.setLoudnessEnhancerEnabled(latest.loudnessEnhancerEnabled)
                 equalizerPreferencesRepository.setLoudnessEnhancerStrength(latest.loudnessEnhancerStrength.toInt().coerceIn(0, 1000))
+            }.onFailure { error ->
+                Timber.tag(TAG).w(error, "Failed to flush equalizer state during onCleared")
             }
-        }.onFailure { error ->
-            Timber.tag(TAG).w(error, "Failed to flush equalizer state during onCleared")
         }
-
+    }
+    
+    override fun onCleared() {
         persistBandLevelsJob?.cancel()
         persistBassBoostJob?.cancel()
         persistVirtualizerJob?.cancel()
         persistLoudnessJob?.cancel()
+        persistLatestStateAsync()
         super.onCleared()
         // Don't release equalizer here - it should persist across screen navigation
         Timber.tag(TAG).d("ViewModel cleared")

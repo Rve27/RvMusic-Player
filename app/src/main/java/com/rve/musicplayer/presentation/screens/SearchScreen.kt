@@ -77,8 +77,10 @@ import com.rve.musicplayer.data.model.SearchHistoryItem
 import com.rve.musicplayer.data.model.SearchResultItem
 import com.rve.musicplayer.data.model.Song
 import com.rve.musicplayer.presentation.components.SmartImage
+import com.rve.musicplayer.presentation.components.SmartImageListTargetSize
 import com.rve.musicplayer.presentation.components.SongInfoBottomSheet
 import com.rve.musicplayer.presentation.viewmodel.PlayerViewModel
+import android.util.Log
 import com.rve.musicplayer.ui.theme.LocalPixelPlayDarkTheme
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.History
@@ -516,7 +518,7 @@ fun SearchHistoryList(
                 top = 8.dp,
             )
         ) {
-            items(historyItems, key = { "history_${it.id ?: it.query}" }) { item ->
+            items(historyItems, key = { "history_${it.id ?: it.query}" }, contentType = { "search_history" }) { item ->
                 SearchHistoryListItem(
                     item = item,
                     onHistoryClick = onHistoryClick,
@@ -718,6 +720,14 @@ fun SearchResultsList(
                             is SearchResultItem.ArtistItem -> "artist_${item.artist.id}"
                             is SearchResultItem.PlaylistItem -> "playlist_${item.playlist.id}_${index}"
                         }
+                    },
+                    contentType = { index ->
+                        when (itemsForSection[index]) {
+                            is SearchResultItem.SongItem -> "search_song"
+                            is SearchResultItem.AlbumItem -> "search_album"
+                            is SearchResultItem.ArtistItem -> "search_artist"
+                            is SearchResultItem.PlaylistItem -> "search_playlist"
+                        }
                     }
                 ) { index ->
                     val item = itemsForSection[index]
@@ -865,6 +875,7 @@ fun SearchResultAlbumItem(
             SmartImage(
                 model = album.albumArtUriString,
                 contentDescription = "Album Art: ${album.title}",
+                targetSize = SmartImageListTargetSize,
                 modifier = Modifier
                     .size(56.dp)
                     .clip(itemShape)
@@ -942,6 +953,7 @@ fun SearchResultArtistItem(
                 SmartImage(
                     model = artist.effectiveImageUrl,
                     contentDescription = "Artist: ${artist.name}",
+                    targetSize = SmartImageListTargetSize,
                     modifier = Modifier
                         .size(56.dp)
                         .clip(CircleShape)

@@ -2,6 +2,8 @@ package com.rve.musicplayer.presentation.components.scoped
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.navigation.NavHostController
 import com.rve.musicplayer.presentation.navigation.Screen
 import com.rve.musicplayer.presentation.navigation.navigateSafely
@@ -15,9 +17,10 @@ internal fun PlayerAlbumNavigationEffect(
     sheetMotionController: SheetMotionController,
     playerViewModel: PlayerViewModel
 ) {
-    LaunchedEffect(navController, sheetCollapsedTargetY) {
+    val latestSheetCollapsedTargetY by rememberUpdatedState(sheetCollapsedTargetY)
+    LaunchedEffect(navController) {
         playerViewModel.albumNavigationRequests.collectLatest { albumId ->
-            sheetMotionController.snapCollapsed(sheetCollapsedTargetY)
+            sheetMotionController.snapCollapsed(latestSheetCollapsedTargetY)
             playerViewModel.collapsePlayerSheet()
 
             navController.navigateSafely(Screen.AlbumDetail.createRoute(albumId)) {

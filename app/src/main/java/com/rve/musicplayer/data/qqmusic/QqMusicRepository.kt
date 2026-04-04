@@ -11,8 +11,11 @@ import com.rve.musicplayer.data.database.QqMusicPlaylistEntity
 import com.rve.musicplayer.data.database.QqMusicSongEntity
 import com.rve.musicplayer.data.database.SongArtistCrossRef
 import com.rve.musicplayer.data.database.SongEntity
+import com.rve.musicplayer.data.database.SourceType
+import com.rve.musicplayer.data.database.toSong
 import com.rve.musicplayer.data.network.qqmusic.QqMusicApiService
 import com.rve.musicplayer.data.preferences.PlaylistPreferencesRepository
+import com.rve.musicplayer.data.stream.BulkSyncResult
 import com.rve.musicplayer.data.stream.CloudMusicUtils
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
@@ -685,7 +688,8 @@ class QqMusicRepository @Inject constructor(
                     bitrate = qqSong.bitrate,
                     sampleRate = null,
                     telegramChatId = null,
-                    telegramFileId = null
+                    telegramFileId = null,
+                    sourceType = SourceType.QQMUSIC
                 )
             )
         }

@@ -7,6 +7,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
@@ -14,12 +15,13 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.mp4.Mp4Extractor
 //import androidx.media3.exoplayer.ffmpeg.FfmpegAudioRenderer
 import com.rve.musicplayer.data.model.TransitionSettings
 import com.rve.musicplayer.utils.envelope
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,6 +41,7 @@ import com.rve.musicplayer.data.telegram.TelegramRepository
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import android.net.Uri
 import java.io.File
@@ -270,6 +273,23 @@ class DualPlayerEngine @Inject constructor(
     }
 
     private fun buildPlayer(handleAudioFocus: Boolean): ExoPlayer {
+        val mediaCodecSelector = MediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
+            val decoderInfos = MediaCodecSelector.DEFAULT.getDecoderInfos(
+                mimeType,
+                requiresSecureDecoder,
+                requiresTunnelingDecoder
+            )
+
+            // Some devices advertise ALAC decoders that stall on high-bitrate M4A files.
+            // Prefer stable software codecs when available, otherwise let the FFmpeg
+            // extension renderer handle ALAC by hiding the platform candidates.
+            if (mimeType.equals(MimeTypes.AUDIO_ALAC, ignoreCase = true)) {
+                val softwareDecoders = decoderInfos.filterNot { it.hardwareAccelerated }
+                softwareDecoders.ifEmpty { emptyList() }
+            } else {
+                decoderInfos
+            }
+        }
         val renderersFactory = object : DefaultRenderersFactory(context) {
             override fun buildAudioSink(
                 context: Context,
@@ -291,6 +311,8 @@ class DualPlayerEngine @Inject constructor(
                     .build()
             }
         }.setEnableAudioFloatOutput(false) // Disable Float output helper
+         .setMediaCodecSelector(mediaCodecSelector)
+         .setEnableDecoderFallback(true)
          .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
 
         val audioAttributes = AudioAttributes.Builder()
@@ -313,26 +335,13 @@ class DualPlayerEngine @Inject constructor(
                         return dataSpec.buildUpon().setUri(resolved).build()
                     }
                     
-                    // Cache miss — URI was not pre-resolved.
-                    // Instead of just logging a warning, we perform a synchronous resolution inside runBlocking.
-                    // This ensures the data source gets a valid URI, which fixes the "loop of death" or loading hang.
-                    // P1-2: Timeout of 3s to prevent indefinitely blocking the ExoPlayer playback thread.
-                    Timber.tag("DualPlayerEngine").w("resolveDataSpec: cache MISS for $originalUri — performing synchronous resolution")
-                    try {
-                        val resolvedUri = runBlocking(Dispatchers.IO) {
-                            kotlinx.coroutines.withTimeout(3000L) {
-                                resolveCloudUri(uri)
+                    Timber.tag("DualPlayerEngine").w("resolveDataSpec: cache MISS for %s — scheduling async pre-resolution", originalUri)
+                    scope.launch(Dispatchers.IO) {
+                        runCatching { resolveCloudUri(uri) }
+                            .onFailure { error ->
+                                Timber.tag("DualPlayerEngine").e(error, "resolveDataSpec: Async resolution failed for %s", originalUri)
                             }
-                        }
-                        if (resolvedUri != uri) {
-                            Timber.tag("DualPlayerEngine").i("resolveDataSpec: Synchronous resolution successful for $originalUri")
-                            return dataSpec.buildUpon().setUri(resolvedUri).build()
-                        }
-                    } catch (e: Exception) {
-                        Timber.tag("DualPlayerEngine").e(e, "resolveDataSpec: Synchronous resolution failed for $originalUri")
                     }
-                    
-                    Timber.tag("DualPlayerEngine").w("resolveDataSpec: cache MISS for $originalUri — playback may fail")
                 }
                 return dataSpec
             }
@@ -340,6 +349,10 @@ class DualPlayerEngine @Inject constructor(
         
         val dataSourceFactory = DefaultDataSource.Factory(context)
         val resolvingFactory = ResolvingDataSource.Factory(dataSourceFactory, resolver)
+        val extractorsFactory = DefaultExtractorsFactory()
+            // Some vendor-produced M4A files expose broken edit lists that make seek
+            // drift or snap back. Ignore them so MP4-family local playback stays seekable.
+            .setMp4ExtractorFlags(Mp4Extractor.FLAG_WORKAROUND_IGNORE_EDIT_LISTS)
 
         // Tune LoadControl to prevent "loop of death" (underrun -> start -> underrun)
         // Increase bufferForPlaybackMs to wait for more data before starting/resuming.
@@ -353,7 +366,7 @@ class DualPlayerEngine @Inject constructor(
             .build()
 
         return ExoPlayer.Builder(context, renderersFactory)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(resolvingFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(resolvingFactory, extractorsFactory))
             .setLoadControl(loadControl)
             .build().apply {
             setAudioAttributes(audioAttributes, handleAudioFocus)

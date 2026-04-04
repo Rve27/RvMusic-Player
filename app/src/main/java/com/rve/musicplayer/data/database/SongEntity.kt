@@ -13,18 +13,39 @@ import com.rve.musicplayer.utils.normalizeMetadataTextOrEmpty
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** Integer constants for the `source_type` column — faster than LIKE checks on URI scheme. */
+object SourceType {
+    const val LOCAL = 0
+    const val TELEGRAM = 1
+    const val NETEASE = 2
+    const val GDRIVE = 3
+    const val QQMUSIC = 4
+    const val NAVIDROME = 5
+
+    /** Derive source type from a content URI string (fallback for migration / conversion). */
+    fun fromContentUri(uri: String): Int = when {
+        uri.startsWith("telegram://") -> TELEGRAM
+        uri.startsWith("netease://") -> NETEASE
+        uri.startsWith("gdrive://") -> GDRIVE
+        uri.startsWith("qqmusic://") -> QQMUSIC
+        uri.startsWith("navidrome://") -> NAVIDROME
+        else -> LOCAL
+    }
+}
+
 @Entity(
     tableName = "songs",
     indices = [
         Index(value = ["title"], unique = false),
         Index(value = ["album_id"], unique = false),
         Index(value = ["artist_id"], unique = false),
-        Index(value = ["artist_name"], unique = false), // Nuevo índice para búsquedas por nombre de artista
+        Index(value = ["artist_name"], unique = false),
         Index(value = ["genre"], unique = false),
-        Index(value = ["parent_directory_path"], unique = false), // Índice para filtrado por directorio
+        Index(value = ["parent_directory_path"], unique = false),
         Index(value = ["content_uri_string"], unique = false),
         Index(value = ["date_added"], unique = false),
-        Index(value = ["duration"], unique = false)
+        Index(value = ["duration"], unique = false),
+        Index(value = ["source_type"], unique = false)
     ],
     foreignKeys = [
         ForeignKey(
@@ -66,9 +87,10 @@ data class SongEntity(
     @ColumnInfo(name = "mime_type") val mimeType: String? = null,
     @ColumnInfo(name = "bitrate") val bitrate: Int? = null, // bits per second
     @ColumnInfo(name = "sample_rate") val sampleRate: Int? = null, // Hz
-    @ColumnInfo(name = "telegram_chat_id") val telegramChatId: Long? = null, // Added for Telegram integration
-    @ColumnInfo(name = "telegram_file_id") val telegramFileId: Int? = null, // Added for Telegram integration
-    @ColumnInfo(name = "artists_json") val artistsJson: String? = null // Serialized list of ArtistRef for efficient loading
+    @ColumnInfo(name = "telegram_chat_id") val telegramChatId: Long? = null,
+    @ColumnInfo(name = "telegram_file_id") val telegramFileId: Int? = null,
+    @ColumnInfo(name = "artists_json") val artistsJson: String? = null,
+    @ColumnInfo(name = "source_type", defaultValue = "0") val sourceType: Int = SourceType.LOCAL
 )
 
 private fun SongEntity.toSongInternal(artists: List<ArtistRef>): Song {
@@ -187,7 +209,7 @@ fun List<SongEntity>.toSongs(): List<Song> {
 // filePath y parentDirectoryPath se poblarán desde MediaStore en el SyncWorker.
 fun Song.toEntity(filePathFromMediaStore: String, parentDirFromMediaStore: String): SongEntity {
     return SongEntity(
-        id = this.id.toLong(), // Asumiendo que el ID del modelo Song puede convertirse a Long
+        id = this.id.toLong(),
         title = this.title,
         artistName = this.artist,
         artistId = this.artistId,
@@ -208,7 +230,8 @@ fun Song.toEntity(filePathFromMediaStore: String, parentDirFromMediaStore: Strin
         year = this.year,
         mimeType = this.mimeType,
         bitrate = this.bitrate,
-        sampleRate = this.sampleRate
+        sampleRate = this.sampleRate,
+        sourceType = SourceType.fromContentUri(this.contentUriString)
     )
 }
 
@@ -240,12 +263,13 @@ fun Song.toEntityWithoutPaths(): SongEntity {
         lyrics = this.lyrics,
         trackNumber = this.trackNumber,
         discNumber = this.discNumber,
-        filePath = "", // Default o manejar como no disponible
-        parentDirectoryPath = "", // Default o manejar como no disponible
+        filePath = "",
+        parentDirectoryPath = "",
         dateAdded = this.dateAdded,
         year = this.year,
         mimeType = this.mimeType,
         bitrate = this.bitrate,
-        sampleRate = this.sampleRate
+        sampleRate = this.sampleRate,
+        sourceType = SourceType.fromContentUri(this.contentUriString)
     )
 }

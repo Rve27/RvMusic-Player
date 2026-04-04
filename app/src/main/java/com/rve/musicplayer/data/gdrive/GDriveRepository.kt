@@ -10,6 +10,7 @@ import com.rve.musicplayer.data.database.GDriveSongEntity
 import com.rve.musicplayer.data.database.MusicDao
 import com.rve.musicplayer.data.database.SongArtistCrossRef
 import com.rve.musicplayer.data.database.SongEntity
+import com.rve.musicplayer.data.database.SourceType
 import com.rve.musicplayer.data.database.toSong
 import com.rve.musicplayer.data.model.Song
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -440,7 +441,8 @@ class GDriveRepository @Inject constructor(
                     bitrate = gdriveSong.bitrate,
                     sampleRate = null,
                     telegramChatId = null,
-                    telegramFileId = null
+                    telegramFileId = null,
+                    sourceType = SourceType.GDRIVE
                 )
             )
         }

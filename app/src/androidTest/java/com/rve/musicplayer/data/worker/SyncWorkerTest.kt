@@ -69,6 +69,7 @@ class SyncWorkerTest {
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         database = Room.inMemoryDatabaseBuilder(context, PixelPlayDatabase::class.java)
+            .addCallback(PixelPlayDatabase.createRuntimeArtifactsCallback())
             .allowMainThreadQueries() // Para tests, está bien.
             .build()
         musicDao = database.musicDao()

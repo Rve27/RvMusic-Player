@@ -42,20 +42,29 @@ import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavHostController
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.rve.musicplayer.R
+import com.rve.musicplayer.data.model.Artist
 import com.rve.musicplayer.data.model.Song
 import com.rve.musicplayer.presentation.components.ExpressiveTopBarContent
 import com.rve.musicplayer.presentation.components.ExpressiveScrollBar
 import com.rve.musicplayer.presentation.components.GenreSortBottomSheet
 import com.rve.musicplayer.presentation.components.MiniPlayerHeight
+import com.rve.musicplayer.presentation.components.SmartImageCompactListTargetSize
 import com.rve.musicplayer.presentation.components.SmartImage
 import com.rve.musicplayer.presentation.components.SongInfoBottomSheet
 import com.rve.musicplayer.presentation.components.subcomps.EnhancedSongListItem
+import com.rve.musicplayer.presentation.screens.QuickFillDialog
 import com.rve.musicplayer.presentation.viewmodel.GenreDetailListItem
 import com.rve.musicplayer.presentation.viewmodel.GenreDetailViewModel
+import com.rve.musicplayer.presentation.viewmodel.SortOption
+import com.rve.musicplayer.presentation.viewmodel.SectionData
 import com.rve.musicplayer.presentation.viewmodel.AlbumData
 import com.rve.musicplayer.presentation.viewmodel.PlayerViewModel
 import com.rve.musicplayer.presentation.viewmodel.StablePlayerState
 import com.rve.musicplayer.ui.theme.LocalPixelPlayDarkTheme
+import com.rve.musicplayer.utils.formatDuration
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape
 import kotlin.math.roundToInt
@@ -79,13 +88,10 @@ fun GenreDetailScreen(
     val playlistUiState by playlistViewModel.uiState.collectAsStateWithLifecycle()
     val libraryGenres by playerViewModel.genres.collectAsStateWithLifecycle()
     
-    // Track transition state to defer heavy list rendering
+    // Defer heavy list rendering until navigation transition settles
     var isTransitionFinished by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        // We wait slightly longer than the navigation transition duration (500ms)
-        // to ensure the heavy list content only populates after the screen is fully static.
-        // Increased delay slightly to ensure absolute smoothness before full list populates.
-        kotlinx.coroutines.delay(800) 
+        kotlinx.coroutines.delay(300)
         isTransitionFinished = true
     }
 
@@ -284,17 +290,14 @@ fun GenreDetailScreen(
                             )
                         }
                         is GenreDetailListItem.SongItem -> {
-                            // Use key to avoid unnecessary recomposition of this stable wrapper
-                            key(item.key) {
-                                GenreSongItemWrapper(
-                                    item = item,
-                                    stablePlayerState = stablePlayerState,
-                                    onSongClick = { song ->
-                                        playerViewModel.showAndPlaySong(song, uiState.sortedSongs, genreDisplayName)
-                                    },
-                                    onMoreOptionsClick = { song -> showSongOptionsSheet = song }
-                                )
-                            }
+                            GenreSongItemWrapper(
+                                item = item,
+                                stablePlayerState = stablePlayerState,
+                                onSongClick = { song ->
+                                    playerViewModel.showAndPlaySong(song, uiState.sortedSongs, genreDisplayName)
+                                },
+                                onMoreOptionsClick = { song -> showSongOptionsSheet = song }
+                            )
                         }
                         is GenreDetailListItem.Spacer -> {
                             Spacer(
@@ -705,6 +708,7 @@ fun GenreAlbumHeader(
             SmartImage(
                 model = album.artUri,
                 contentDescription = null,
+                targetSize = SmartImageCompactListTargetSize,
                 modifier = Modifier
                     .size(48.dp)
                     .clip(RoundedCornerShape(8.dp))

@@ -6,7 +6,6 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class QueueItem(
     val id: Long, // ID único de la canción
-    val albumArtBitmapData: ByteArray?,
     val albumArtUri: String? = null
 ) {
     override fun equals(other: Any?): Boolean {
@@ -17,10 +16,6 @@ data class QueueItem(
 
         if (id != other.id) return false
         if (albumArtUri != other.albumArtUri) return false
-        if (albumArtBitmapData != null) {
-            if (other.albumArtBitmapData == null) return false
-            if (!albumArtBitmapData.contentEquals(other.albumArtBitmapData)) return false
-        } else if (other.albumArtBitmapData != null) return false
 
         return true
     }
@@ -28,7 +23,6 @@ data class QueueItem(
     override fun hashCode(): Int {
         var result = id.hashCode()
         result = 31 * result + (albumArtUri?.hashCode() ?: 0)
-        result = 31 * result + (albumArtBitmapData?.contentHashCode() ?: 0)
         return result
     }
 }

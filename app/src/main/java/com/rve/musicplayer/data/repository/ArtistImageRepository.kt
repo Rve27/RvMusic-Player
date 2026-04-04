@@ -11,6 +11,7 @@ import com.rve.musicplayer.data.network.deezer.DeezerApiService
 import com.rve.musicplayer.utils.NetworkRetryUtils
 import com.rve.musicplayer.utils.isRetryableNetworkError
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.sync.Mutex
@@ -138,6 +139,8 @@ class ArtistImageRepository @Inject constructor(
                         } else {
                             Timber.tag(TAG).d("Skipping prefetch for $artistName") //check
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         Timber.tag(TAG).w("Failed to prefetch image for $artistName: ${e.message}")
                     }
@@ -194,6 +197,8 @@ class ArtistImageRepository @Inject constructor(
                     null
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Timber.tag(TAG).e("Error fetching artist image for $artistName: ${e.message}")
             // Consider transient errors? For now treating as failed to avoid spam.
@@ -313,9 +318,12 @@ class ArtistImageRepository @Inject constructor(
         val bounds = BitmapFactory.Options().apply {
             inJustDecodeBounds = true
         }
+        
+        // Fetch dimensions without loading the full bitmap into memory.
+        // decodeStream returns null when inJustDecodeBounds is true.
         resolver.openInputStream(sourceUri)?.use { inputStream ->
             BitmapFactory.decodeStream(inputStream, null, bounds)
-        } ?: return null
+        }
 
         val width = bounds.outWidth
         val height = bounds.outHeight

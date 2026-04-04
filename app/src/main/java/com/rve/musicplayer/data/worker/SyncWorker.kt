@@ -19,6 +19,7 @@ import com.rve.musicplayer.data.database.MusicDao
 import com.rve.musicplayer.data.database.NeteaseDao
 import com.rve.musicplayer.data.database.SongArtistCrossRef
 import com.rve.musicplayer.data.database.SongEntity
+import com.rve.musicplayer.data.database.SourceType
 import com.rve.musicplayer.data.database.TelegramDao // Added
 import com.rve.musicplayer.data.database.resolveAlbumArtUri
 import com.rve.musicplayer.data.database.serializeArtistRefs
@@ -33,6 +34,7 @@ import com.rve.musicplayer.utils.AlbumArtUtils
 import com.rve.musicplayer.utils.AudioMetaUtils.getAudioMetadata
 import com.rve.musicplayer.utils.DirectoryRuleResolver
 import com.rve.musicplayer.utils.LocalArtworkUri
+import com.rve.musicplayer.utils.buildLocalAudioSelection
 import com.rve.musicplayer.utils.normalizeMetadataTextOrEmpty
 import com.rve.musicplayer.utils.splitArtistsByDelimiters
 import dagger.assisted.Assisted
@@ -721,7 +723,7 @@ constructor(
                         MediaStore.Audio.Media.DATE_MODIFIED
                 )
 
-        val (baseSelection, baseArgs) = getBaseSelection(minSongDurationMs)
+        val (baseSelection, baseArgs) = buildLocalAudioSelection(minSongDurationMs)
         val selectionBuilder = StringBuilder(baseSelection)
         val selectionArgsList = baseArgs.toMutableList()
 
@@ -1034,7 +1036,8 @@ constructor(
                         },
                 mimeType = audioMetadata?.mimeType ?: raw.mimeType,
                 sampleRate = audioMetadata?.sampleRate,
-                bitrate = audioMetadata?.bitrate
+                bitrate = audioMetadata?.bitrate,
+                sourceType = SourceType.LOCAL
         )
     }
 
@@ -1211,7 +1214,7 @@ constructor(
     private fun fetchMediaStoreIds(directoryResolver: DirectoryRuleResolver): Set<Long> {
         val ids = mutableSetOf<Long>()
         val projection = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.DATA)
-        val (selection, selectionArgs) = getBaseSelection(minSongDurationMs)
+        val (selection, selectionArgs) = buildLocalAudioSelection(minSongDurationMs)
 
         contentResolver.query(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
@@ -1236,12 +1239,6 @@ constructor(
         return ids
     }
 
-    private fun getBaseSelection(minDuration: Int): Pair<String, Array<String>> {
-        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= ?"
-        val selectionArgs = arrayOf(minDuration.toString())
-        return selection to selectionArgs
-    }
-
     /**
      * Fetches all file paths currently known to MediaStore.
      * Used to identify new files that need scanning.
@@ -1249,7 +1246,7 @@ constructor(
     private fun fetchMediaStoreFilePaths(): Set<String> {
         val paths = HashSet<String>()
         val projection = arrayOf(MediaStore.Audio.Media.DATA)
-        val (selection, selectionArgs) = getBaseSelection(minSongDurationMs)
+        val (selection, selectionArgs) = buildLocalAudioSelection(minSongDurationMs)
         
         contentResolver.query(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
@@ -1513,7 +1510,8 @@ constructor(
                     sampleRate = realSampleRate,
                     telegramChatId = tSong.chatId,
                     telegramFileId = tSong.fileId,
-                    artistsJson = serializeArtistRefs(telegramArtistRefs)
+                    artistsJson = serializeArtistRefs(telegramArtistRefs),
+                    sourceType = SourceType.TELEGRAM
                 )
                 songsToInsert.add(songEntity)
             }
@@ -1636,7 +1634,8 @@ constructor(
                         sampleRate = null,
                         telegramChatId = null,
                         telegramFileId = null,
-                        artistsJson = serializeArtistRefs(neteaseArtistRefs)
+                        artistsJson = serializeArtistRefs(neteaseArtistRefs),
+                        sourceType = SourceType.NETEASE
                     )
                 )
             }

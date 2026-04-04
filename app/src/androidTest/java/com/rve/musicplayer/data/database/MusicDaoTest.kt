@@ -25,6 +25,7 @@ class MusicDaoTest {
     fun createDb() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, PixelPlayDatabase::class.java)
+            .addCallback(PixelPlayDatabase.createRuntimeArtifactsCallback())
             .allowMainThreadQueries() // Permite consultas en el hilo principal para tests
             .build()
         musicDao = db.musicDao()

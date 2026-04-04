@@ -11,6 +11,7 @@ import com.rve.musicplayer.data.database.NavidromeSongEntity
 import com.rve.musicplayer.data.database.toEntity
 import com.rve.musicplayer.data.database.SongArtistCrossRef
 import com.rve.musicplayer.data.database.SongEntity
+import com.rve.musicplayer.data.database.SourceType
 import com.rve.musicplayer.data.database.toSong
 import com.rve.musicplayer.data.model.Song
 import com.rve.musicplayer.data.navidrome.model.NavidromeCredentials
@@ -694,7 +695,8 @@ class NavidromeRepository @Inject constructor(
                     bitrate = navidromeSong.bitRate,
                     sampleRate = null,
                     telegramChatId = null,
-                    telegramFileId = null
+                    telegramFileId = null,
+                    sourceType = SourceType.NAVIDROME
                 )
             )
         }

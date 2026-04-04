@@ -277,7 +277,16 @@ class MediaFileHttpServerService : Service() {
                 lastFailureReason = null
                 lastFailureMessage = null
 
-                server = embeddedServer(CIO, port = serverPort, host = "0.0.0.0") {
+                server = embeddedServer(
+                    CIO,
+                    port = serverPort,
+                    host = "0.0.0.0",
+                    configure = {
+                        // Keep Ktor's bind behavior consistent with our port probe and reduce
+                        // false "Address already in use" failures on quick Cast server restarts.
+                        reuseAddress = true
+                    }
+                ) {
                         routing {
                             get("/health") {
                                 if (!call.ensureLoopbackHealthRequest()) return@get

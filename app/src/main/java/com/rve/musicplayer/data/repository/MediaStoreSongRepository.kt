@@ -17,6 +17,7 @@ import com.rve.musicplayer.utils.AlbumArtUtils
 import com.rve.musicplayer.utils.DirectoryRuleResolver
 import com.rve.musicplayer.utils.DirectoryFilterUtils
 import com.rve.musicplayer.utils.LogUtils
+import com.rve.musicplayer.utils.buildLocalAudioSelection
 import com.rve.musicplayer.utils.normalizeMetadataText
 import com.rve.musicplayer.utils.normalizeMetadataTextOrEmpty
 import com.rve.musicplayer.utils.extractArtistsFromTitle
@@ -24,6 +25,8 @@ import com.rve.musicplayer.utils.splitArtistsByDelimiters
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -37,6 +40,16 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private data class SearchPrefs(
+    val favoriteIds: Set<Long>,
+    val allowedDirs: Set<String>,
+    val blockedDirs: Set<String>,
+    val artistDelimiters: List<String>,
+    val wordDelims: List<String>,
+    val extractFromTitle: Boolean,
+    val minDuration: Int
+)
+
 @Singleton
 class MediaStoreSongRepository @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -45,12 +58,6 @@ class MediaStoreSongRepository @Inject constructor(
     private val musicDao: MusicDao,
     private val userPreferencesRepository: UserPreferencesRepository
 ) : SongRepository {
-
-    private fun getBaseSelection(minDurationMs: Int = 10000): String {
-        // Relaxed filter: Remove IS_MUSIC to include all audio strings (WhatsApp, Recs, etc.)
-        // We filter by duration based on user preference (default 10s).
-        return "${MediaStore.Audio.Media.DURATION} >= $minDurationMs AND ${MediaStore.Audio.Media.TITLE} != ''"
-    }
 
     private suspend fun getFavoriteIds(): Set<Long> {
         return favoritesDao.getFavoriteSongIdsOnce().toSet()
@@ -107,6 +114,7 @@ class MediaStoreSongRepository @Inject constructor(
         extraSelectionArgs: Array<String>? = null
     ): List<Song> = withContext(Dispatchers.IO) {
         val songs = mutableListOf<Song>()
+        val (baseSelection, baseSelectionArgs) = buildLocalAudioSelection(minDurationMs)
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
@@ -130,12 +138,17 @@ class MediaStoreSongRepository @Inject constructor(
         // Assuming minSdk is high enough or columns exist (ALBUM_ARTIST is API 30+, need check if app supports lower)
 
         val selection = buildString {
-            append(getBaseSelection(minDurationMs))
+            append(baseSelection)
             if (!extraSelection.isNullOrBlank()) {
                 append(" AND (")
                 append(extraSelection)
                 append(")")
             }
+        }
+        val selectionArgs = if (extraSelectionArgs.isNullOrEmpty()) {
+            baseSelectionArgs
+        } else {
+            baseSelectionArgs + extraSelectionArgs
         }
 
         val songIdToGenreMap = getSongIdToGenreMap(context.contentResolver)
@@ -145,7 +158,7 @@ class MediaStoreSongRepository @Inject constructor(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
                 selection,
-                extraSelectionArgs,
+                selectionArgs,
                 "${MediaStore.Audio.Media.TITLE} ASC"
             )?.use { cursor ->
                 val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
@@ -321,13 +334,16 @@ class MediaStoreSongRepository @Inject constructor(
 
     override suspend fun searchSongs(query: String): List<Song> {
         if (query.isBlank()) return emptyList()
-        val favoriteIds = getFavoriteIds()
-        val allowedDirs = userPreferencesRepository.allowedDirectoriesFlow.first()
-        val blockedDirs = userPreferencesRepository.blockedDirectoriesFlow.first()
-        val artistDelimiters = userPreferencesRepository.artistDelimitersFlow.first()
-        val wordDelims = userPreferencesRepository.artistWordDelimitersFlow.first()
-        val extractFromTitle = userPreferencesRepository.extractArtistsFromTitleFlow.first()
-        val minDuration = userPreferencesRepository.minSongDurationFlow.first()
+        val (favoriteIds, allowedDirs, blockedDirs, artistDelimiters, wordDelims, extractFromTitle, minDuration) = coroutineScope {
+            val fav = async { getFavoriteIds() }
+            val allowed = async { userPreferencesRepository.allowedDirectoriesFlow.first() }
+            val blocked = async { userPreferencesRepository.blockedDirectoriesFlow.first() }
+            val delims = async { userPreferencesRepository.artistDelimitersFlow.first() }
+            val wordD = async { userPreferencesRepository.artistWordDelimitersFlow.first() }
+            val extract = async { userPreferencesRepository.extractArtistsFromTitleFlow.first() }
+            val minDur = async { userPreferencesRepository.minSongDurationFlow.first() }
+            SearchPrefs(fav.await(), allowed.await(), blocked.await(), delims.await(), wordD.await(), extract.await(), minDur.await())
+        }
         val queryTerm = "%${query.trim()}%"
         return fetchSongsFromMediaStore(
             favoriteIds = favoriteIds,
@@ -384,14 +400,14 @@ class MediaStoreSongRepository @Inject constructor(
     private suspend fun getFilteredSongIds(allowedDirs: List<String>, blockedDirs: List<String>, minDurationMs: Int = 10000): List<Long> = withContext(Dispatchers.IO) {
         val ids = mutableListOf<Long>()
         val projection = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.DATA)
-        val selection = getBaseSelection(minDurationMs)
+        val (selection, selectionArgs) = buildLocalAudioSelection(minDurationMs)
 
         try {
             context.contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
                 selection,
-                null,
+                selectionArgs,
                 "${MediaStore.Audio.Media.TITLE} ASC"
             )?.use { cursor ->
                 val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
