@@ -468,6 +468,13 @@ object LyricsUtils {
             return Lyrics(plain = emptyList(), synced = emptyList())
         }
 
+        val normalizedInput = stripLeadingLyricsDocumentNoise(lyricsText)
+        if (looksLikeTtmlDocument(normalizedInput)) {
+            val converted = TtmlLyricsParser.parseToEnhancedLrc(normalizedInput)
+                ?: return Lyrics(plain = emptyList(), synced = emptyList())
+            return parseLyrics(converted)
+        }
+
         val syncedLines = mutableListOf<SyncedLine>()
         val plainLines = mutableListOf<String>()
         var isSynced = false
@@ -725,6 +732,28 @@ object LyricsUtils {
             ""
         }
     }
+}
+
+private fun stripLeadingLyricsDocumentNoise(value: String): String {
+    return value.trimStart { char ->
+        char.isWhitespace() ||
+            char == '\uFEFF' ||
+            Character.getType(char).toByte() == Character.FORMAT
+    }
+}
+
+private fun looksLikeTtmlDocument(value: String): Boolean {
+    if (value.startsWith("<tt", ignoreCase = true)) {
+        return true
+    }
+    if (!value.startsWith("<?xml", ignoreCase = true)) {
+        return false
+    }
+
+    val afterDeclaration = value.substringAfter("?>", missingDelimiterValue = "")
+    return afterDeclaration
+        .trimStart()
+        .startsWith("<tt", ignoreCase = true)
 }
 
 private fun sanitizeLrcLine(rawLine: String): String {

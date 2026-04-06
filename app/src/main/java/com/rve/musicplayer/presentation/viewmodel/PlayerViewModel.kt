@@ -761,6 +761,18 @@ class PlayerViewModel @Inject constructor(
         playbackStateHolder.initialize(viewModelScope)
         themeStateHolder.initialize(viewModelScope)
 
+        stablePlayerState
+            .map { it.currentSong?.albumArtUriString?.takeIf { uri -> uri.isNotBlank() } }
+            .distinctUntilChanged()
+            .onEach { artworkUri ->
+                themeStateHolder.extractAndGenerateColorScheme(
+                    albumArtUriAsUri = artworkUri?.toUri(),
+                    currentSongUriString = artworkUri,
+                    isPreload = false
+                )
+            }
+            .launchIn(viewModelScope)
+
         viewModelScope.launch {
             lyricsStateHolder.songUpdates.collect { update: Pair<com.rve.musicplayer.data.model.Song, com.rve.musicplayer.data.model.Lyrics?> ->
                 val song = update.first

@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
@@ -14,6 +15,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
+import androidx.core.graphics.drawable.toBitmap
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.media3.common.C
@@ -91,6 +93,10 @@ import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
+import coil.imageLoader
+import coil.request.CachePolicy
+import coil.request.ImageRequest
+import coil.size.Precision
 
 import javax.inject.Inject
 import androidx.core.net.toUri
@@ -291,6 +297,15 @@ class MusicService : MediaLibraryService() {
         controller.initialize()
         initializeCastWearSync()
         registerHeadsetReconnectMonitor()
+
+        serviceScope.launch {
+            musicRepository.telegramRepository.downloadCompleted.collect {
+                if (isCurrentWidgetArtworkBackedByTelegram()) {
+                    invalidateCachedWidgetArtwork()
+                    requestWidgetAndWearRefreshWithFollowUp()
+                }
+            }
+        }
 
         // Restore equalizer state from preferences and only attach audio effects when
         // the user actually has at least one effect enabled for the current session.
@@ -1998,6 +2013,24 @@ class MusicService : MediaLibraryService() {
     private var cachedWidgetArtLoadFailureKey: String? = null
     private var cachedWidgetArtLoadFailureAtMs: Long = 0L
 
+    private fun invalidateCachedWidgetArtwork() {
+        cachedWidgetArtSourceKey = null
+        cachedWidgetArtResolvedUri = null
+        cachedWidgetArtBytes = null
+        cachedWidgetArtLoadFailureKey = null
+        cachedWidgetArtLoadFailureAtMs = 0L
+    }
+
+    private fun isCurrentWidgetArtworkBackedByTelegram(): Boolean {
+        val currentItem = engine.masterPlayer.currentMediaItem ?: return false
+        val metadata = currentItem.mediaMetadata
+        val contentUriString = currentItem.localConfiguration?.uri?.toString()
+            ?: metadata.extras?.getString(MediaItemBuilder.EXTERNAL_EXTRA_CONTENT_URI)
+        val artworkUriString = resolveStoredArtworkUriString(metadata)
+        return contentUriString?.startsWith("telegram://") == true ||
+            artworkUriString?.startsWith("telegram_art://") == true
+    }
+
     private suspend fun getAlbumArtForWidget(
         mediaId: String?,
         embeddedArt: ByteArray?,
@@ -2159,7 +2192,7 @@ class MusicService : MediaLibraryService() {
                 }
     }
 
-    private fun loadArtworkBytesForWidget(uri: Uri): ByteArray? {
+    private suspend fun loadArtworkBytesForWidget(uri: Uri): ByteArray? {
         val uriString = uri.toString()
         val scheme = uri.scheme?.lowercase()
         val isLocalArtworkUri = com.rve.musicplayer.utils.LocalArtworkUri.isLocalArtworkUri(uriString)
@@ -2205,7 +2238,42 @@ class MusicService : MediaLibraryService() {
                     connection?.disconnect()
                 }
             }
-            else -> null
+            else -> loadArtworkBytesViaCoil(uri)
+        }
+    }
+
+    private suspend fun loadArtworkBytesViaCoil(uri: Uri): ByteArray? {
+        val request = ImageRequest.Builder(applicationContext)
+            .data(uri)
+            .size(
+                ArtworkTransportSanitizer.WIDGET_CONFIG.maxDimensionPx,
+                ArtworkTransportSanitizer.WIDGET_CONFIG.maxDimensionPx,
+            )
+            .precision(Precision.INEXACT)
+            .allowHardware(false)
+            .memoryCachePolicy(CachePolicy.ENABLED)
+            .networkCachePolicy(CachePolicy.ENABLED)
+            .build()
+
+        return runCatching {
+            val drawable = applicationContext.imageLoader.execute(request).drawable ?: return@runCatching null
+            val fallbackSizePx = ArtworkTransportSanitizer.WIDGET_CONFIG.maxDimensionPx
+            val bitmap = drawable.toBitmap(
+                width = drawable.intrinsicWidth.takeIf { it > 0 } ?: fallbackSizePx,
+                height = drawable.intrinsicHeight.takeIf { it > 0 } ?: fallbackSizePx,
+                config = Bitmap.Config.ARGB_8888,
+            )
+            val encodedBytes = ByteArrayOutputStream().use { output ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 92, output)
+                output.toByteArray()
+            }
+            ArtworkTransportSanitizer.sanitizeEncodedBytes(
+                data = encodedBytes,
+                config = ArtworkTransportSanitizer.WIDGET_CONFIG,
+            )
+        }.getOrElse { error ->
+            Timber.tag(TAG).w(error, "Widget artwork read failed via Coil for uri=%s", uri)
+            null
         }
     }
 
