@@ -45,6 +45,7 @@ android {
         applicationId = "com.rve.musicplayer"
         minSdk = 33
         targetSdk = 36
+        ndkVersion = "29.0.14206865"
         versionCode = (project.findProperty("APP_VERSION_CODE") as String).toInt()
         versionName = project.findProperty("APP_VERSION_NAME") as String
 
