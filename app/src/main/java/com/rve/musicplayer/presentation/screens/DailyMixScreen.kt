@@ -196,8 +196,20 @@ fun DailyMixScreen(
                 }
                 showSongInfoSheet = false
             },
-            onEditSong = { newTitle, newArtist, newAlbum, newGenre, newLyrics, newTrackNumber, newDiscNumber, coverArtUpdate ->
-                playerViewModel.editSongMetadata(song, newTitle, newArtist, newAlbum, newGenre, newLyrics, newTrackNumber, newDiscNumber, coverArtUpdate)
+            onEditSong = { newTitle, newArtist, newAlbum, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
+                playerViewModel.editSongMetadata(
+                    song,
+                    newTitle,
+                    newArtist,
+                    newAlbum,
+                    newGenre,
+                    newLyrics,
+                    newTrackNumber,
+                    newDiscNumber,
+                    replayGainTrackGainDb,
+                    replayGainAlbumGainDb,
+                    coverArtUpdate
+                )
             },
             generateAiMetadata = { fields ->
                 playerViewModel.generateAiMetadata(song, fields)

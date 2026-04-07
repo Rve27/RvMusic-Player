@@ -3981,6 +3981,8 @@ class PlayerViewModel @Inject constructor(
         newLyrics: String,
         newTrackNumber: Int,
         newDiscNumber: Int?,
+        newReplayGainTrackGainDb: String? = null,
+        newReplayGainAlbumGainDb: String? = null,
         coverArtUpdate: CoverArtUpdate?,
     ) {
         viewModelScope.launch {
@@ -3997,6 +3999,8 @@ class PlayerViewModel @Inject constructor(
                 newLyrics = newLyrics,
                 newTrackNumber = newTrackNumber,
                 newDiscNumber = newDiscNumber,
+                newReplayGainTrackGainDb = newReplayGainTrackGainDb,
+                newReplayGainAlbumGainDb = newReplayGainAlbumGainDb,
                 coverArtUpdate = coverArtUpdate
             )
 

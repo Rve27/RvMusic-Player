@@ -86,6 +86,11 @@ import com.rve.musicplayer.data.media.AudioMetadataReader
 import com.rve.musicplayer.data.media.CoverArtUpdate
 import dev.shreyaspatil.capturable.controller.rememberCaptureController
 import java.io.ByteArrayOutputStream
+import java.util.Locale
+
+private fun formatReplayGainForInput(gainDb: Float?): String {
+    return gainDb?.let { String.format(Locale.US, "%.2f", it) }.orEmpty()
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -93,7 +98,18 @@ fun EditSongSheet(
     visible: Boolean,
     song: Song,
     onDismiss: () -> Unit,
-    onSave: (title: String, artist: String, album: String, genre: String, lyrics: String, trackNumber: Int, discNumber: Int?, coverArtUpdate: CoverArtUpdate?) -> Unit,
+    onSave: (
+        title: String,
+        artist: String,
+        album: String,
+        genre: String,
+        lyrics: String,
+        trackNumber: Int,
+        discNumber: Int?,
+        replayGainTrackGainDb: String,
+        replayGainAlbumGainDb: String,
+        coverArtUpdate: CoverArtUpdate?
+    ) -> Unit,
     generateAiMetadata: suspend (List<String>) -> Result<com.rve.musicplayer.data.ai.SongMetadata>
 ) {
     val transitionState = remember { MutableTransitionState(false) }
@@ -128,7 +144,18 @@ fun EditSongSheet(
 private fun EditSongContent(
     song: Song,
     onDismiss: () -> Unit,
-    onSave: (title: String, artist: String, album: String, genre: String, lyrics: String, trackNumber: Int, discNumber: Int?, coverArtUpdate: CoverArtUpdate?) -> Unit,
+    onSave: (
+        title: String,
+        artist: String,
+        album: String,
+        genre: String,
+        lyrics: String,
+        trackNumber: Int,
+        discNumber: Int?,
+        replayGainTrackGainDb: String,
+        replayGainAlbumGainDb: String,
+        coverArtUpdate: CoverArtUpdate?
+    ) -> Unit,
     generateAiMetadata: suspend (List<String>) -> Result<com.rve.musicplayer.data.ai.SongMetadata>
 ) {
     var title by remember { mutableStateOf(song.title) }
@@ -138,6 +165,8 @@ private fun EditSongContent(
     var lyrics by remember { mutableStateOf(song.lyrics ?: "") }
     var trackNumber by remember { mutableStateOf(song.trackNumber.toString()) }
     var discNumber by remember { mutableStateOf(song.discNumber?.toString() ?: "") }
+    var replayGainTrackGainDb by remember { mutableStateOf("") }
+    var replayGainAlbumGainDb by remember { mutableStateOf("") }
     var coverArtPreview by remember { mutableStateOf<ImageBitmap?>(null) }
     var editedCoverArt by remember { mutableStateOf<CoverArtUpdate?>(null) }
     var isCoverArtDeleted by remember { mutableStateOf(false) }
@@ -164,26 +193,35 @@ private fun EditSongContent(
         lyrics = song.lyrics ?: ""
         trackNumber = song.trackNumber.toString()
         discNumber = song.discNumber?.toString() ?: ""
+        replayGainTrackGainDb = ""
+        replayGainAlbumGainDb = ""
         coverArtPreview = null
         editedCoverArt = null
         isCoverArtDeleted = false
 
-        // Try to read embedded lyrics if they were not cached in the database
-        if (lyrics.isBlank() && song.path.isNotBlank()) {
-            withContext(Dispatchers.IO) {
+        if (song.path.isNotBlank()) {
+            val embeddedMetadata = withContext(Dispatchers.IO) {
                 try {
                     val file = java.io.File(song.path)
                     if (file.exists()) {
-                        AudioMetadataReader.read(file)?.lyrics?.let { embeddedLyrics ->
-                            if (embeddedLyrics.isNotBlank()) {
-                                lyrics = embeddedLyrics
-                            }
-                        }
+                        AudioMetadataReader.read(file, readArtwork = false)
+                    } else {
+                        null
                     }
                 } catch (e: Exception) {
-                    Timber.e(e, "Failed to read embedded lyrics for EditSongSheet")
+                    Timber.e(e, "Failed to read embedded metadata for EditSongSheet")
+                    null
                 }
             }
+
+            if (lyrics.isBlank()) {
+                embeddedMetadata?.lyrics?.takeIf { it.isNotBlank() }?.let { embeddedLyrics ->
+                    lyrics = embeddedLyrics
+                }
+            }
+
+            replayGainTrackGainDb = formatReplayGainForInput(embeddedMetadata?.replayGainTrackGainDb)
+            replayGainAlbumGainDb = formatReplayGainForInput(embeddedMetadata?.replayGainAlbumGainDb)
         }
     }
 
@@ -452,6 +490,66 @@ private fun EditSongContent(
                 }
             }
 
+            item {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        modifier = Modifier.padding(start = 4.dp),
+                        text = "ReplayGain Track (dB)",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    OutlinedTextField(
+                        value = replayGainTrackGainDb,
+                        shape = textFieldShape,
+                        colors = textFieldColors,
+                        onValueChange = { replayGainTrackGainDb = it },
+                        placeholder = { Text("-6.50") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Rounded.RepeatOne,
+                                tint = MaterialTheme.colorScheme.primary,
+                                contentDescription = "ReplayGain Track Icon"
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
+                }
+            }
+
+            item {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        modifier = Modifier.padding(start = 4.dp),
+                        text = "ReplayGain Album (dB)",
+                        color = MaterialTheme.colorScheme.tertiary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    OutlinedTextField(
+                        value = replayGainAlbumGainDb,
+                        shape = textFieldShape,
+                        colors = textFieldColors,
+                        onValueChange = { replayGainAlbumGainDb = it },
+                        placeholder = { Text("-8.20") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Rounded.Repeat,
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                contentDescription = "ReplayGain Album Icon"
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
+                }
+            }
+
             // --- Campo de Artista ---
             item {
                 Column(
@@ -611,6 +709,8 @@ private fun EditSongContent(
                                     lyrics,
                                     resolvedTrackNumber,
                                     resolvedDiscNumber,
+                                    replayGainTrackGainDb.trim(),
+                                    replayGainAlbumGainDb.trim(),
                                     editedCoverArt
                                 )
                             },
